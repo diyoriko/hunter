@@ -1,0 +1,31 @@
+{
+  "name": "hunter",
+  "version": "0.1.0",
+  "description": "Smart job aggregator bot — scrapes, scores, delivers daily digest via Telegram",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "ts-node src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "scrape": "ts-node src/cli.ts scrape",
+    "digest": "ts-node src/cli.ts digest"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.4.3",
+    "cheerio": "^1.0.0",
+    "dotenv": "^16.4.5",
+    "grammy": "^1.27.0",
+    "node-cron": "^3.0.3",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.8",
+    "@types/node": "^20.11.0",
+    "@types/node-cron": "^3.0.11",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3",
+    "vitest": "^4.0.18"
+  }
+}
