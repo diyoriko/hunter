@@ -15,12 +15,11 @@ jobs:
       - name: Download Hunter database
         env:
           BACKUP_TOKEN: ${{ secrets.BACKUP_TOKEN }}
-          HUNTER_URL: ${{ vars.HUNTER_URL }}
         run: |
           DATE=$(date -u +%Y-%m-%d)
           curl -sf --max-time 60 \
             -H "X-Admin-Token: $BACKUP_TOKEN" \
-            "${HUNTER_URL:-https://hunter-production.up.railway.app}/backup" \
+            "https://hunter-production-0b65.up.railway.app/backup" \
             -o "jobs-${DATE}.db"
           ls -lh "jobs-${DATE}.db"
 

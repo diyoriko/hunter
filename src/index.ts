@@ -43,10 +43,11 @@ async function main() {
 
   // Set bot commands (replaces paperclip with menu)
   await bot.api.setMyCommands([
-    { command: 'start', description: '\u041D\u0430\u0447\u0430\u0442\u044C / \u043F\u0435\u0440\u0435\u0437\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C' },
-    { command: 'digest', description: '\u0414\u0430\u0439\u0434\u0436\u0435\u0441\u0442 \u0432\u0430\u043A\u0430\u043D\u0441\u0438\u0439' },
-    { command: 'profile', description: '\u041C\u043E\u0439 \u043F\u0440\u043E\u0444\u0438\u043B\u044C' },
-    { command: 'stats', description: '\u0421\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0430' },
+    { command: 'start', description: 'Начать / перезапустить' },
+    { command: 'digest', description: 'Дайджест вакансий' },
+    { command: 'profile', description: 'Мой профиль' },
+    { command: 'stats', description: 'Статистика' },
+    { command: 'subscribe', description: 'Тарифы и подписка' },
   ]);
 
   // HTTP server (health check + backup)
@@ -73,6 +74,8 @@ async function main() {
         res.end(JSON.stringify({ error: 'database not found' }));
         return;
       }
+      // Checkpoint WAL to ensure backup includes all committed data
+      try { getDb().pragma('wal_checkpoint(TRUNCATE)'); } catch {}
       const stat = fs.statSync(dbPath);
       const date = new Date().toISOString().slice(0, 10);
       res.writeHead(200, {
