@@ -20,7 +20,7 @@ export function startScheduler(bot: Bot): void {
   tasks.push(cron.schedule(scrapeCron, () => { runScheduledScrape(bot); }, { timezone }));
   tasks.push(cron.schedule(digestCron, () => { sendMorningDigest(bot); }, { timezone }));
 
-  logger.info('scheduler', 'Scheduler started: scrape 09:00/13:00/17:00 MSK, digest 09:15 MSK');
+  logger.info('scheduler', `Scheduler started: scrape ${scrapeCron}, digest ${digestCron} (${timezone})`);
 }
 
 export function stopScheduler(): void {

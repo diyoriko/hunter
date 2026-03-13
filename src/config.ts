@@ -61,8 +61,8 @@ export const CONFIG = {
 
   /** Scheduler settings */
   scheduler: {
-    scrapeCron: '0 6,10,14 * * *', // 09:00, 13:00, 17:00 MSK
-    digestCron: '15 6 * * *',       // 09:15 MSK (after scrape)
+    scrapeCron: '0 9,13,17 * * *',  // 09:00, 13:00, 17:00 MSK
+    digestCron: '15 9 * * *',       // 09:15 MSK (after scrape)
     timezone: 'Europe/Moscow',
     pushMinScore: 70,
     pushMaxCards: 5,
