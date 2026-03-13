@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-PROJECT_DIR="/Users/diyoriko/Documents/Projects/Hunter"
+PROJECT_DIR="${HUNTER_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 REPORTS_DIR="$PROJECT_DIR/reports/strategist"
 AGENT_DIR="$PROJECT_DIR/agents/strategist"
 DATE=$(date +%Y-%m-%d)
@@ -15,8 +15,11 @@ TMP_PROMPT=$(mktemp)
 BOT_TOKEN=$(grep TELEGRAM_BOT_TOKEN "$PROJECT_DIR/.env" | cut -d= -f2)
 ADMIN_CHAT_ID="${ADMIN_TELEGRAM_ID:?Set ADMIN_TELEGRAM_ID env var}"
 
-# PATH for claude CLI and node
-export PATH="/Users/diyoriko/.local/bin:/Users/diyoriko/.nvm/versions/node/v22.22.0/bin:/usr/local/bin:/usr/bin:/bin"
+# PATH for claude CLI and node (Mac-specific paths added only if they exist)
+if [ -d "$HOME/.nvm/versions/node" ]; then
+  NVM_BIN=$(ls -d "$HOME"/.nvm/versions/node/*/bin 2>/dev/null | tail -1)
+  export PATH="$HOME/.local/bin:${NVM_BIN:-}:/usr/local/bin:/usr/bin:/bin:$PATH"
+fi
 
 # Don't run inside Claude Code
 unset CLAUDECODE 2>/dev/null || true
