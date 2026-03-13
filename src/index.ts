@@ -57,6 +57,14 @@ async function main() {
     logger.info('main', `Health check listening on :${port}`);
   });
 
+  // Graceful shutdown — stop polling before Railway kills the process
+  const shutdown = () => {
+    logger.info('main', 'Shutting down gracefully...');
+    bot.stop();
+  };
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
+
   // Start polling
   await bot.start({
     onStart: async () => {
