@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hunter Backlog</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent: #58a6ff;
+    --p0: #f85149;
+    --p1: #d29922;
+    --p2: #3fb950;
+    --p3: #8b949e;
+    --done: #238636;
+    --done-bg: rgba(35,134,54,0.15);
+    --deployed: #a371f7;
+    --deployed-bg: rgba(163,113,247,0.15);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px;
+    max-width: 960px;
+    margin: 0 auto;
+    line-height: 1.5;
+  }
+
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 32px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  h1 {
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: -0.5px;
+  }
+
+  .meta {
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  .meta .live {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background: var(--p2);
+    border-radius: 50%;
+    margin-right: 4px;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* Stats */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+    margin-bottom: 32px;
+  }
+
+  .stat {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+  }
+
+  .stat-value {
+    font-size: 28px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .stat-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 4px;
+  }
+
+  /* Sections */
+  .section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+
+  .section-header {
+    padding: 16px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .section-header:hover {
+    background: rgba(255,255,255,0.03);
+  }
+
+  .section-title {
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .section-badge {
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .badge-active { background: rgba(88,166,255,0.15); color: var(--accent); }
+  .badge-done { background: var(--done-bg); color: var(--done); }
+  .badge-planned { background: rgba(139,148,158,0.15); color: var(--text-muted); }
+
+  .section-body {
+    padding: 0 20px 16px;
+  }
+
+  .collapse-icon {
+    transition: transform 0.2s;
+    color: var(--text-muted);
+  }
+
+  .collapsed .collapse-icon {
+    transform: rotate(-90deg);
+  }
+
+  .collapsed .section-body {
+    display: none;
+  }
+
+  /* Progress bar */
+  .progress-bar {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 4px;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: width 0.3s;
+  }
+
+  /* Groups */
+  .group {
+    margin-bottom: 16px;
+  }
+
+  .group:last-child {
+    margin-bottom: 0;
+  }
+
+  .group-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .priority-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* Tasks */
+  .task {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    margin-bottom: 2px;
+    font-size: 14px;
+    transition: background 0.15s;
+  }
+
+  .task:hover {
+    background: rgba(255,255,255,0.03);
+  }
+
+  .task.has-detail {
+    cursor: pointer;
+  }
+
+  .task-check {
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    border: 2px solid var(--border);
+    flex-shrink: 0;
+    margin-top: 1px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .task-done .task-check {
+    background: var(--done);
+    border-color: var(--done);
+  }
+
+  .task-done .task-check::after {
+    content: '\2713';
+    color: white;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .task-done .task-text {
+    color: var(--text-muted);
+    text-decoration: line-through;
+    text-decoration-color: rgba(139,148,158,0.4);
+  }
+
+  .task-content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .task-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .task-text {
+    flex: 1;
+  }
+
+  .task-text strong {
+    font-weight: 600;
+  }
+
+  .task-detail {
+    display: none;
+    margin-top: 6px;
+    padding: 8px 12px;
+    background: rgba(255,255,255,0.02);
+    border-left: 2px solid var(--border);
+    border-radius: 0 4px 4px 0;
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.6;
+  }
+
+  .task-detail.open {
+    display: block;
+  }
+
+  .expand-icon {
+    font-size: 10px;
+    color: var(--text-muted);
+    transition: transform 0.15s;
+    flex-shrink: 0;
+  }
+
+  .task.expanded .expand-icon {
+    transform: rotate(90deg);
+  }
+
+  /* Release (done section) */
+  .done-section .section-body {
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .release-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 5px 12px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  .release-item::before {
+    content: '\2713';
+    color: var(--done);
+    font-weight: 700;
+    font-size: 12px;
+    margin-top: 2px;
+    flex-shrink: 0;
+  }
+
+  /* Info tables — classic table layout at top */
+  .info-tables {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  .info-table {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .info-table-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    padding: 12px 16px 8px;
+  }
+
+  .info-table table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .info-table td {
+    padding: 6px 16px;
+    font-size: 13px;
+    border-top: 1px solid var(--border);
+  }
+
+  .info-table td:first-child {
+    color: var(--text-muted);
+    white-space: nowrap;
+    width: 1%;
+  }
+
+  .info-table td:last-child {
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  .info-table .cost {
+    color: var(--text-muted);
+    font-weight: 400;
+    font-size: 12px;
+  }
+
+  .info-table .cost.paid {
+    color: var(--p1);
+  }
+
+  .section-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    margin: 24px 0 12px;
+  }
+
+  /* Agent card */
+  .agent-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+
+  .agent-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .agent-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    background: rgba(88,166,255,0.15);
+  }
+
+  .agent-name {
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .agent-meta {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .agent-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 10px;
+    background: rgba(88,166,255,0.1);
+    color: var(--accent);
+  }
+
+  .agent-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  .agent-skills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 8px;
+  }
+
+  .skill-tag {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.05);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Hunter Backlog</h1>
+  <div class="meta"><span class="live"></span> <span id="lastUpdate"></span></div>
+</header>
+
+<div class="stats" id="stats"></div>
+<div id="infopanel"></div>
+<div id="agent"></div>
+<div id="content"></div>
+
+<script>
+// === GitHub raw URL (uncomment when repo is created) ===
+const GITHUB_RAW_URL = 'https://raw.githubusercontent.com/diyoriko/hunter/main/BACKLOG.md';
+
+// === Markdown parser for Hunter BACKLOG.md format ===
+
+function parseBacklogMd(md) {
+  const lines = md.split('\n');
+  const done = { version: '', date: '', items: [] };
+  const sprints = [];
+  let section = null;
+  let currentSprint = null;
+  let currentGroup = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Done section: ## Сделано (v0.1.0 — 12.03.2026)
+    const doneMatch = line.match(/^## Сделано\s*\((v[\d.]+)\s*[—\-]\s*(.+?)\)/);
+    if (doneMatch) {
+      done.version = doneMatch[1];
+      done.date = doneMatch[2];
+      section = 'done';
+      continue;
+    }
+
+    // Sprint: ## SPRINT 1 — Name
+    const sprintMatch = line.match(/^## SPRINT (\d+) — (.+)/);
+    if (sprintMatch) {
+      section = 'sprint';
+      currentSprint = {
+        number: parseInt(sprintMatch[1]),
+        name: sprintMatch[2].trim(),
+        status: 'active',
+        groups: []
+      };
+      sprints.push(currentSprint);
+      currentGroup = null;
+      continue;
+    }
+
+    // Priority group: ### P0: Name  or  ### P0-1: Name (subgroups)
+    const groupMatch = line.match(/^### (P\d)(?:-\d+)?:\s*(.+)/);
+    if (groupMatch && currentSprint) {
+      currentGroup = {
+        priority: groupMatch[1].toLowerCase(),
+        title: groupMatch[2].trim(),
+        tasks: []
+      };
+      currentSprint.groups.push(currentGroup);
+      continue;
+    }
+
+    // Separator resets section
+    if (/^---\s*$/.test(line)) {
+      if (section === 'done') section = null;
+      currentGroup = null;
+      continue;
+    }
+
+    // Metadata section
+    if (/^## Метаданные/.test(line)) {
+      section = 'metadata';
+      continue;
+    }
+
+    // Task: - [x] or - [ ] with optional **bold** — detail
+    const taskMatch = line.match(/^- \[([ x])\]\s+(.+)/);
+    if (taskMatch) {
+      const isDone = taskMatch[1] === 'x';
+      let raw = taskMatch[2].trim();
+
+      if (section === 'done') {
+        // Strip markdown bold
+        raw = raw.replace(/\*\*/g, '');
+        done.items.push(raw);
+        continue;
+      }
+
+      if (currentGroup) {
+        let text = raw;
+        let detail = '';
+        const boldMatch = raw.match(/^\*\*(.+?)\*\*\s*[—\-]\s*(.*)/);
+        if (boldMatch) {
+          text = boldMatch[1];
+          detail = boldMatch[2] || '';
+        } else {
+          const plainBold = raw.match(/^\*\*(.+?)\*\*/);
+          if (plainBold) text = plainBold[1];
+        }
+        const task = { text, done: isDone };
+        if (detail) task.detail = detail;
+        currentGroup.tasks.push(task);
+      }
+      continue;
+    }
+  }
+
+  return { done, sprints };
+}
+
+// === Embedded BACKLOG.md (source of truth until GitHub repo) ===
+
+const BACKLOG_MD = `# Hunter — Backlog
+
+> Источник правды для задач. Стратег добавляет, владелец приоритизирует.
+> Последнее обновление: 2026-03-13
+
+---
+
+## Сделано (v0.2.0 — 12.03.2026)
+
+- [x] Мультиюзерная архитектура (users, user_vacancies, cover_letters)
+- [x] Онбординг: 14-step state machine с skip/back
+- [x] Скрейперы: hh.ru API + Habr Career API
+- [x] Скоринг: навыки 40%, зп 25%, формат 20%, отрасль 15%
+- [x] Персонализированный дайджест с пагинацией
+- [x] Cover letters через Claude CLI (Sonnet)
+- [x] Кнопки: Поиск, Дайджест, Профиль, Статистика, Очистить
+- [x] Owner seed (пропуск онбординга)
+- [x] Агент-стратег (launchd, ежедневно)
+- [x] Inline-кнопки в онбординге (Пропустить, Назад)
+- [x] 22 отрасли + свободный ввод
+- [x] Переписано описание бота
+- [x] Field-by-field редактирование (12 полей) с escape hatch
+- [x] Deploy-уведомления в Telegram
+- [x] UX-аудит 8 флоу (34 проблемы найдены)
+- [x] Railway 24/7: volume, healthcheck, env vars, автодеплой
+- [x] Admin ID в config
+
+---
+
+## SPRINT 2 — Монетизация (путь к первому рублю)
+
+### P0: Автоскрейп + push (retention)
+
+- [ ] **Scheduler** — node-cron: скрейп для всех юзеров 3x/день (09:00, 13:00, 17:00 MSK)
+- [ ] **Push-уведомления** — после скрейпа слать Pro-юзерам вакансии score>70 как instant alert
+- [ ] **Утренний дайджест** — ежедневная push-сводка всем: "N новых вакансий, M high-score" (free — сводка, Pro — карточки)
+
+### P0: Freemium лимиты (gates перед оплатой)
+
+- [ ] **Schema migration** — добавить в users: plan, plan_expires_at, searches_today, searches_reset_at, letters_used, credits
+- [ ] **Лимиты Free** — 3 поиска/день, 5 cover letters всего (lifetime), 15 вакансий в дайджесте
+- [ ] **Лимиты Pro** — безлимит поисков/писем, полные push-алерты, утренний дайджест с карточками
+- [ ] **Guards** — проверка лимитов в bot.ts перед handleScrape и generateCoverLetter
+- [ ] **Paywall UX** — "Бесплатные генерации закончились. Pro — безлимит + алерты: /subscribe"
+- [ ] **Сброс счётчиков** — ежедневно для searches (cron в scheduler)
+
+### P0: Telegram Stars оплата — гибридная модель
+
+- [ ] **Команда /subscribe** — показать Pro план + credits пакеты
+- [ ] **Pro подписка** — ctx.replyWithInvoice(), 500 Stars/мес (~\$5.50)
+- [ ] **Credits пакеты** — 50 Stars = 10 credits, 200 Stars = 50 credits (1 cover letter = 5 credits)
+- [ ] **pre_checkout_query + successful_payment** — обработка оплаты, обновление plan/credits в БД
+- [ ] **Напоминание о продлении** — за 3 дня до окончания Pro
+
+### P0: Остаток
+
+- [ ] **Переименовать бота** — "Design Jobs Bot" → выбрать название в @BotFather (учесть расширение за пределы дизайна)
+
+---
+
+## SPRINT 3 — Качество и polish
+
+### P1: Cover letter resilience
+
+- [ ] **Таймаут** — сообщение "Генерация занимает дольше обычного..." после 15с
+- [ ] **Fallback при ошибке** — показывать вакансию с кнопками, а не голый текст ошибки
+- [ ] **Restyle fallback** — при ошибке "Другой вариант" показывать предыдущее письмо
+
+### P1: Защита и валидация
+
+- [ ] **Rate limiting** — cooldown 1 час на /search per user (спам-защита hh.ru/Habr)
+- [ ] **Input validation** — лимит длины в онбординге: имя 100, title 200, about 2000, skills 500
+- [ ] **Salary parser** — поддержка "k", "K", пробелов, запятых: "300k-500k" → 300000-500000
+- [ ] **Silent catch → logger.warn** — заменить пустые catch блоки в bot.ts
+
+### P1: UX polish
+
+- [ ] **Feedback при скрейпе** — прогресс: "Ищу на hh.ru..." → "Ищу на Habr..." → "Оцениваю вакансии..."
+- [ ] **Пагинация** — "Показано 1–15 из 127" вместо "Показано 15 из 127"
+- [ ] **Пустой дайджест** — предложить расширить профиль если 0 вакансий
+- [ ] **Vacancy после "Откликнулся"** — не удалять, добавить ✅ к заголовку
+- [ ] **"Очистить" → подтверждение** — предупреждение + переименовать в "Очистить чат"
+- [ ] **Карточка вакансии: моноширинные поля** — Зарплата, Формат, Скор, Навыки — в code
+
+### P1: Статистика
+
+- [ ] **Полировка экрана** — убрать превью Хабра, убрать эмодзи из заголовка, сверить описание скора с scorer.ts
+
+### P1: Скоринг и данные
+
+- [ ] **Качественный порог скора** — проанализировать распределение, поднять порог если нужно (сейчас 40)
+- [ ] **"Скрыть" = навсегда** — rejected status сохраняется и не возвращается при повторном скрейпе
+- [ ] **FK CASCADE** — ON DELETE CASCADE для user_vacancies и cover_letters
+
+### P1: Мелкий UX
+
+- [ ] **Профиль с пояснениями** — показать как Red flags и Блеклист влияют на скоринг
+- [ ] **Возвращение пользователя** — при /start показать последнее действие или быстрые кнопки
+- [ ] **Кнопка "Все навыки"** — полный список навыков вакансии
+- [ ] **Edit menu в 2 колонки** — на мобильном 3 кнопки в ряд слишком мелкие
+- [ ] **Ошибки с контекстом** — вместо "Ошибка: ..." добавить совет что делать дальше
+
+---
+
+## SPRINT 4 — Рост и фичи
+
+### P2: Привлечение (первые 100-500 юзеров)
+
+- [ ] **Лендинг** — минимальная страница: что делает бот, "Начать в Telegram" (Tilda/HTML)
+- [ ] **Посты в TG-чатах** — "Дизайнеры ищут работу", "Design Jobs RU", developer-чаты
+- [ ] **Статья VC.ru** — "Я сделал AI-бот для поиска работы"
+- [ ] **Статья Habr** — технический пост о стеке и архитектуре
+
+### P2: Виральность и retention
+
+- [ ] **Реферальная программа** — /invite → уникальная ссылка → +1 мес Pro за каждого платящего
+- [ ] **Progress tracking** — трекать: найдено вакансий, отправлено откликов per user
+- [ ] **Share progress** — кнопка "Поделиться результатом" → карточка "Hunter помог найти X вакансий"
+- [ ] **Inline bot mode** — @hunterbot senior designer remote в чатах → вакансии. Мощный механизм роста
+
+### P2: Аналитика
+
+- [ ] **Метрики** — DAU/MAU, WAJS (Weekly Active Job Seekers), конверсия free→pro, churn rate
+
+### P2: Источники и контент
+
+- [ ] **RU источники** — Getmatch, Careerspace, Telegram-каналы вакансий
+- [ ] **Domain scoring** — отрасль компании (EdTech, FinTech, E-commerce и т.д.)
+- [ ] **Фильтры в дайджесте** — по формату, зарплате, источнику (inline-кнопки)
+
+### P2: Профиль и AI
+
+- [ ] **Импорт резюме** — парсинг PDF/DOCX или hh.ru профиль
+- [ ] **A/B cover letters** — Haiku (быстрый) vs Sonnet (качественный)
+- [ ] **Anthropic API** — заменить CLI на SDK для масштабируемости
+
+### P2: Расширение аудитории
+
+- [ ] **Все IT-профессии** — поддержать разработчиков, аналитиков, QA, PM (онбординг, скоринг, запросы)
+
+---
+
+## SPRINT 5 — Перспектива
+
+### P3: Career Copilot (расширение JTBD — увеличивает LTV с 1 до 3-6 мес)
+
+- [ ] **Interview prep** — /interview: типовые вопросы, подготовка ответов по профилю
+- [ ] **Salary negotiation** — /salary: рыночные данные по позиции, скрипты переговоров
+- [ ] **Offer comparison** — /offers: сравнение офферов (зп, формат, бенефиты, рост)
+- [ ] **Saved searches** — сохранённые фильтры с автоматическим мониторингом
+
+### P3: B2B (x10 revenue, запускать при 3000+ юзерах)
+
+- [ ] **Job postings** — работодатели размещают: \$49/вакансия, \$99/featured, \$199/highlight
+- [ ] **Talent pool** — рекрутеры: \$49/мес за доступ к анонимным профилям
+- [ ] **"Post a job"** — кнопка появляется при достижении 3000+ юзеров
+
+### P3: Глобализация
+
+- [ ] **EN интерфейс** — мультиязычность (открывает 50M+ IT-специалистов)
+- [ ] **EN источники** — Wellfound, YC Jobs, Remote OK, LinkedIn
+- [ ] **Telegram Mini App** — веб-интерфейс для профиля и дайджеста
+
+---
+
+## Метаданные
+
+| Параметр | Значение |
+|----------|----------|
+| Bot | @jobhunt_ai_bot ("Design Jobs Bot" → переименовать) |
+| Admin | env: ADMIN_TELEGRAM_ID |
+| DB | jobs.db (SQLite WAL) |
+| Hosting | Railway 24/7, автодеплой из main |
+| Стратег | launchd com.hunter.strategist.plist, ежедневно |
+| Стек | Node.js 22, TypeScript, grammY, better-sqlite3, Claude CLI |
+
+| Сервис | Назначение | Стоимость |
+|--------|-----------|-----------|
+| Railway | Хостинг 24/7 | ~\$5/мес |
+| Claude CLI | Cover letters (Max подписка) | \$0 |
+| Telegram Stars | Оплата (план) | ~30% комиссия |
+| hh.ru API | Вакансии | Бесплатно |
+| Habr Career API | Вакансии | Бесплатно |
+`;
+
+// === Static data for sections not in markdown ===
+
+const agentData = {
+  name: 'Strategist',
+  icon: '\uD83C\uDFAF',
+  platform: 'macOS launchd',
+  schedule: '10:00 MSK ежедневно',
+  status: 'cron',
+  skills: ['Монетизация', 'Фичи', 'Дистрибуция', 'Конкуренты', 'Тренды'],
+  model: 'Claude Sonnet 4.6'
+};
+
+const servicesData = [
+  { name: 'Railway', purpose: 'Хостинг 24/7 (план)', cost: '~$5/мес', paid: true },
+  { name: 'Claude CLI', purpose: 'Cover letters (Max подписка)', cost: 'Входит в подписку', paid: false },
+  { name: 'Telegram Stars', purpose: 'Оплата подписки (план)', cost: '30% комиссия', paid: false },
+  { name: 'hh.ru API', purpose: 'Скрейпинг вакансий', cost: 'Бесплатно', paid: false },
+  { name: 'Habr Career API', purpose: 'Скрейпинг вакансий', cost: 'Бесплатно', paid: false },
+];
+
+const metaData = [
+  { key: 'Bot', value: '@jobhunt_ai_bot ("Design Jobs Bot")' },
+  { key: 'Admin', value: 'env: ADMIN_TELEGRAM_ID' },
+  { key: 'DB', value: 'jobs.db (SQLite WAL)' },
+  { key: 'Hosting (dev)', value: 'macOS launchd com.hunter.bot.plist' },
+  { key: 'Hosting (prod)', value: 'TBD — Railway' },
+  { key: 'Stack', value: 'Node.js 22, TypeScript, grammY, better-sqlite3, Claude CLI' },
+];
+
+// === Fetch from GitHub or use embedded ===
+
+async function loadBacklog() {
+  if (GITHUB_RAW_URL) {
+    try {
+      const res = await fetch(GITHUB_RAW_URL + '?t=' + Date.now());
+      if (!res.ok) throw new Error(res.status);
+      const md = await res.text();
+      const parsed = parseBacklogMd(md);
+      localStorage.setItem('hunter_backlog', JSON.stringify(parsed));
+      localStorage.setItem('hunter_backlog_ts', Date.now().toString());
+      return parsed;
+    } catch (err) {
+      console.warn('[backlog] fetch failed, trying cache:', err);
+      const cached = localStorage.getItem('hunter_backlog');
+      if (cached) return JSON.parse(cached);
+    }
+  }
+  return parseBacklogMd(BACKLOG_MD);
+}
+
+// === Renderers ===
+
+const priorityColors = { p0: 'var(--p0)', p1: 'var(--p1)', p2: 'var(--p2)', p3: 'var(--p3)' };
+const priorityLabels = { p0: 'P0 Critical', p1: 'P1 Important', p2: 'P2 Nice to have', p3: 'P3 Future' };
+
+function countTasks(sprints) {
+  let total = 0, done = 0;
+  const byPriority = { p0: 0, p1: 0, p2: 0, p3: 0 };
+  for (const s of sprints) {
+    for (const g of s.groups) {
+      for (const t of g.tasks) {
+        total++;
+        if (t.done) done++;
+        if (!t.done) byPriority[g.priority] = (byPriority[g.priority] || 0) + 1;
+      }
+    }
+  }
+  return { total, done, todo: total - done, byPriority };
+}
+
+function renderStats(doneItems, sprints) {
+  const counts = countTasks(sprints);
+  const totalDone = doneItems.length + counts.done;
+  const totalAll = totalDone + counts.todo;
+
+  const items = [
+    { value: totalAll, label: 'Всего', color: 'var(--text)' },
+    { value: totalDone, label: 'Сделано', color: 'var(--done)' },
+    { value: counts.byPriority.p0 || 0, label: 'P0', color: 'var(--p0)' },
+    { value: counts.byPriority.p1 || 0, label: 'P1', color: 'var(--p1)' },
+    { value: counts.byPriority.p2 + counts.byPriority.p3, label: 'P2+P3', color: 'var(--p2)' },
+  ];
+
+  document.getElementById('stats').innerHTML = items.map(s =>
+    `<div class="stat">
+      <div class="stat-value" style="color:${s.color}">${s.value}</div>
+      <div class="stat-label">${s.label}</div>
+    </div>`
+  ).join('');
+}
+
+function renderAgent() {
+  const a = agentData;
+  document.getElementById('agent').innerHTML = `
+    <div class="section-label">Agents</div>
+    <div class="agent-card">
+      <div class="agent-header">
+        <div class="agent-icon">${a.icon}</div>
+        <div>
+          <div class="agent-name">${a.name}</div>
+          <div class="agent-meta">${a.platform} &middot; ${a.model}</div>
+        </div>
+      </div>
+      <div class="agent-status">
+        <span class="agent-status-dot"></span>
+        ${a.schedule}
+      </div>
+      <div class="agent-skills">
+        ${a.skills.map(s => `<span class="skill-tag">${s}</span>`).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderDone(done) {
+  if (!done.items.length) return '';
+  return `
+    <div class="section done-section collapsed">
+      <div class="section-header" onclick="this.parentElement.classList.toggle('collapsed')">
+        <div>
+          <span class="section-title">${done.version} — ${done.date}</span>
+          <span class="section-badge badge-done">deployed</span>
+        </div>
+        <span class="collapse-icon">&#x25BC;</span>
+      </div>
+      <div class="section-body">
+        ${done.items.map(item => `<div class="release-item">${esc(item)}</div>`).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderSprint(sprint) {
+  const allTasks = sprint.groups.flatMap(g => g.tasks);
+  const doneCount = allTasks.filter(t => t.done).length;
+  const total = allTasks.length;
+  const pct = total ? Math.round(doneCount / total * 100) : 0;
+  const badgeClass = sprint.status === 'active' ? 'badge-active' : 'badge-planned';
+  const badgeText = sprint.status === 'active' ? 'active' : 'planned';
+
+  return `
+    <div class="section">
+      <div class="section-header" onclick="this.parentElement.classList.toggle('collapsed')">
+        <div>
+          <span class="section-title">Sprint ${sprint.number} — ${esc(sprint.name)}</span>
+          <span class="section-badge ${badgeClass}">${badgeText}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <span style="font-size:12px;color:var(--text-muted)">${doneCount}/${total}</span>
+          <span class="collapse-icon">&#x25BC;</span>
+        </div>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+      <div class="section-body">
+        ${sprint.groups.map(renderGroup).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderGroup(group) {
+  const color = priorityColors[group.priority] || 'var(--text-muted)';
+  return `
+    <div class="group">
+      <div class="group-title">
+        <span class="priority-dot" style="background:${color}"></span>
+        ${esc(group.priority.toUpperCase())}: ${esc(group.title)}
+      </div>
+      ${group.tasks.map(renderTask).join('')}
+    </div>
+  `;
+}
+
+function renderTask(task) {
+  const doneClass = task.done ? 'task-done' : '';
+  const hasDetail = task.detail ? 'has-detail' : '';
+  const clickHandler = task.detail ? 'onclick="toggleDetail(this)"' : '';
+
+  return `
+    <div class="task ${doneClass} ${hasDetail}" ${clickHandler}>
+      <div class="task-check"></div>
+      <div class="task-content">
+        <div class="task-row">
+          <span class="task-text"><strong>${esc(task.text)}</strong></span>
+          ${task.detail ? '<span class="expand-icon">&#x25B6;</span>' : ''}
+        </div>
+        ${task.detail ? `<div class="task-detail">${esc(task.detail)}</div>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function renderInfoPanel() {
+  const metaRows = metaData.map(m =>
+    `<tr><td>${esc(m.key)}</td><td>${esc(m.value)}</td></tr>`
+  ).join('');
+
+  const serviceRows = servicesData.map(s =>
+    `<tr><td>${esc(s.name)}</td><td>${esc(s.purpose)}</td><td class="cost ${s.paid ? 'paid' : ''}">${esc(s.cost)}</td></tr>`
+  ).join('');
+
+  document.getElementById('infopanel').innerHTML = `
+    <div class="info-tables">
+      <div class="info-table">
+        <div class="info-table-title">Project</div>
+        <table>${metaRows}</table>
+      </div>
+      <div class="info-table">
+        <div class="info-table-title">Services</div>
+        <table>${serviceRows}</table>
+      </div>
+    </div>
+  `;
+}
+
+// === Helpers ===
+
+function esc(str) {
+  const el = document.createElement('span');
+  el.textContent = str;
+  return el.innerHTML;
+}
+
+function toggleDetail(el) {
+  el.classList.toggle('expanded');
+  const detail = el.querySelector('.task-detail');
+  if (detail) detail.classList.toggle('open');
+}
+
+// === Main ===
+
+async function main() {
+  const data = await loadBacklog();
+  if (!data) {
+    document.getElementById('content').innerHTML = '<p style="color:var(--text-muted)">Failed to load backlog</p>';
+    return;
+  }
+
+  // Last update
+  const ts = localStorage.getItem('hunter_backlog_ts');
+  const updateText = GITHUB_RAW_URL && ts
+    ? `Updated ${new Date(parseInt(ts)).toLocaleString('ru-RU')}`
+    : 'Embedded data';
+  document.getElementById('lastUpdate').textContent = updateText;
+
+  // Render
+  renderStats(data.done.items, data.sprints);
+  renderInfoPanel();
+  renderAgent();
+
+  let html = '';
+  html += '<div class="section-label">Releases</div>';
+  html += renderDone(data.done);
+  html += '<div class="section-label">Sprints</div>';
+  html += data.sprints.map(renderSprint).join('');
+  document.getElementById('content').innerHTML = html;
+}
+
+main();
+</script>
+</body>
+</html>

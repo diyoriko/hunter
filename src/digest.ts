@@ -1,31 +1,22 @@
 import type { ScoredVacancy } from './types';
-import { getTodayNewVacancies, getTopVacancies, getStats } from './db';
-import { getCoverLetter } from './cover-letter';
-
-const SCORE_EMOJI: Record<string, string> = {
-  hot: '🔥',
-  good: '✅',
-  ok: '💡',
-  meh: '⚪',
-};
 
 function scoreEmoji(score: number): string {
-  if (score >= 80) return SCORE_EMOJI.hot;
-  if (score >= 60) return SCORE_EMOJI.good;
-  if (score >= 40) return SCORE_EMOJI.ok;
-  return SCORE_EMOJI.meh;
+  if (score >= 80) return '\u{1F525}';
+  if (score >= 60) return '\u2705';
+  if (score >= 40) return '\u{1F4A1}';
+  return '\u26AA';
 }
 
-function formatSalary(v: ScoredVacancy): string {
+export function formatSalary(v: ScoredVacancy): string {
   if (!v.salaryFrom && !v.salaryTo) return 'n/a';
 
-  const currency = v.salaryCurrency === 'RUB' ? '₽' : v.salaryCurrency === 'USD' ? '$' : v.salaryCurrency ?? '₽';
+  const currency = v.salaryCurrency === 'RUB' ? '\u20BD' : v.salaryCurrency === 'USD' ? '$' : v.salaryCurrency ?? '\u20BD';
 
   if (v.salaryFrom && v.salaryTo) {
-    return `${formatNum(v.salaryFrom)}–${formatNum(v.salaryTo)} ${currency}`;
+    return `${formatNum(v.salaryFrom)}\u2013${formatNum(v.salaryTo)} ${currency}`;
   }
-  if (v.salaryFrom) return `от ${formatNum(v.salaryFrom)} ${currency}`;
-  return `до ${formatNum(v.salaryTo!)} ${currency}`;
+  if (v.salaryFrom) return `\u043E\u0442 ${formatNum(v.salaryFrom)} ${currency}`;
+  return `\u0434\u043E ${formatNum(v.salaryTo!)} ${currency}`;
 }
 
 function formatNum(n: number): string {
@@ -36,120 +27,62 @@ function formatNum(n: number): string {
 
 function formatFormat(v: ScoredVacancy): string {
   switch (v.format) {
-    case 'remote': return '🏠 Remote';
-    case 'hybrid': return '🔄 Hybrid';
-    case 'office': return '🏢 Office';
-    default: return '❓';
+    case 'remote': return '\u{1F3E0}';
+    case 'hybrid': return '\u{1F504}';
+    case 'office': return '\u{1F3E2}';
+    default: return '\u2753';
   }
 }
 
-/** Format a single vacancy line for digest */
-function formatVacancyLine(v: ScoredVacancy, index: number): string {
+/** Compact vacancy card */
+export function formatVacancyCard(v: ScoredVacancy): string {
   return [
-    `${index}. ${scoreEmoji(v.score)} <b>${escapeHtml(v.title)}</b>`,
-    `   ${escapeHtml(v.company)} · ${formatSalary(v)} · ${formatFormat(v)}`,
-    `   Score: ${v.score}/100 (S:${v.scoreSkills} $:${v.scoreSalary} F:${v.scoreFormat} D:${v.scoreDomain})`,
-    `   <a href="${v.url}">Открыть</a> · /cover_${v.id} · /like_${v.id} · /reject_${v.id}`,
+    `${scoreEmoji(v.score)} <b>${escapeHtml(v.title)}</b>`,
+    `${escapeHtml(v.company)} \u00B7 ${formatSalary(v)} \u00B7 ${formatFormat(v)} \u00B7 ${v.score}/100`,
   ].join('\n');
 }
 
-/** Build daily digest message */
-export function buildDigest(): { text: string; count: number } {
-  const todayNew = getTodayNewVacancies();
-  const stats = getStats();
-
-  if (todayNew.length === 0) {
-    return {
-      text: `<b>Дайджест</b>\n\nНовых подходящих вакансий сегодня не найдено.\n\nВсего в базе: ${stats.total} | Новых: ${stats.new} | Лайкнуто: ${stats.liked}`,
-      count: 0,
-    };
-  }
-
-  // Group by score tiers
-  const hot = todayNew.filter(v => v.score >= 80);
-  const good = todayNew.filter(v => v.score >= 60 && v.score < 80);
-  const rest = todayNew.filter(v => v.score < 60);
-
-  const lines: string[] = [
-    `<b>Дайджест — ${new Date().toLocaleDateString('ru-RU')}</b>`,
-    `Новых: ${todayNew.length} | Всего в базе: ${stats.total}`,
-    '',
-  ];
-
-  let idx = 1;
-
-  if (hot.length > 0) {
-    lines.push(`<b>🔥 Горячие (${hot.length})</b>`);
-    for (const v of hot) {
-      lines.push(formatVacancyLine(v, idx++));
-      lines.push('');
-    }
-  }
-
-  if (good.length > 0) {
-    lines.push(`<b>✅ Хорошие (${good.length})</b>`);
-    for (const v of good.slice(0, 15)) {
-      lines.push(formatVacancyLine(v, idx++));
-      lines.push('');
-    }
-  }
-
-  if (rest.length > 0) {
-    lines.push(`<b>💡 Остальные (${rest.length})</b>`);
-    for (const v of rest.slice(0, 10)) {
-      lines.push(formatVacancyLine(v, idx++));
-      lines.push('');
-    }
-  }
-
-  lines.push(`/stats — статистика | /top30 — топ-30 всех времён`);
-
-  return { text: lines.join('\n'), count: todayNew.length };
-}
-
-/** Build top vacancies message */
-export function buildTop(limit: number = 30): string {
-  const vacancies = getTopVacancies(limit);
-  const lines: string[] = [
-    `<b>Топ-${limit} вакансий</b>`,
-    '',
-  ];
-
-  vacancies.forEach((v, i) => {
-    lines.push(formatVacancyLine(v, i + 1));
-    lines.push('');
-  });
-
-  if (vacancies.length === 0) {
-    lines.push('Пока нет вакансий. Запусти /scrape для сбора.');
-  }
-
-  return lines.join('\n');
-}
-
-/** Build stats message */
-export function buildStatsMessage(): string {
-  const s = getStats();
-  const sourceLines = Object.entries(s.sources)
-    .map(([source, count]) => `  ${source}: ${count}`)
-    .join('\n');
+/** Detailed vacancy view */
+export function formatVacancyDetail(v: ScoredVacancy): string {
+  const skills = v.skills.length > 0 ? v.skills.join(', ') : '\u043D\u0435 \u0443\u043A\u0430\u0437\u0430\u043D\u044B';
 
   return [
-    '<b>Статистика Hunter</b>',
+    `${scoreEmoji(v.score)} <b>${escapeHtml(v.title)}</b>`,
+    `${escapeHtml(v.company)}`,
     '',
-    `Всего вакансий: ${s.total}`,
-    `Новых: ${s.new}`,
-    `Лайкнуто: ${s.liked}`,
-    `Откликнулся: ${s.applied}`,
-    `Отклонено: ${s.rejected}`,
-    `Средний скор: ${s.avgScore}/100`,
-    '',
-    '<b>По источникам:</b>',
-    sourceLines || '  нет данных',
+    `\u0417\u0430\u0440\u043F\u043B\u0430\u0442\u0430: ${formatSalary(v)}`,
+    `\u0424\u043E\u0440\u043C\u0430\u0442: ${formatFormat(v)} ${v.format}${v.city ? ' \u00B7 ' + escapeHtml(v.city) : ''}`,
+    `\u0421\u043A\u043E\u0440: ${v.score}/100 (\u043D\u0430\u0432\u044B\u043A\u0438 ${v.scoreSkills}, \u0437\u043F ${v.scoreSalary}, \u0444\u043E\u0440\u043C\u0430\u0442 ${v.scoreFormat})`,
+    `\u041D\u0430\u0432\u044B\u043A\u0438: ${escapeHtml(skills)}`,
+    `\u0418\u0441\u0442\u043E\u0447\u043D\u0438\u043A: ${v.source}`,
+    `<a href="${v.url}">\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u0432\u0430\u043A\u0430\u043D\u0441\u0438\u044E</a>`,
   ].join('\n');
 }
 
-function escapeHtml(text: string): string {
+/** Vacancy detail + cover letter combined */
+export function formatVacancyWithLetter(v: ScoredVacancy, letter: string): string {
+  return [
+    formatVacancyDetail(v),
+    '',
+    '\u2014 \u2014 \u2014',
+    '',
+    `<code>${escapeHtml(letter)}</code>`,
+  ].join('\n');
+}
+
+/** Vacancy detail + loading state */
+export function formatVacancyLoading(v: ScoredVacancy, text: string = '\u0413\u0435\u043D\u0435\u0440\u0438\u0440\u0443\u044E \u043F\u0438\u0441\u044C\u043C\u043E...'): string {
+  return [
+    formatVacancyDetail(v),
+    '',
+    `<i>${escapeHtml(text)}</i>`,
+  ].join('\n');
+}
+
+/** Page size for digest pagination */
+export const DIGEST_PAGE_SIZE = 15;
+
+export function escapeHtml(text: string): string {
   return text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

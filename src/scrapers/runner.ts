@@ -1,55 +1,79 @@
 import { logger } from '../logger';
 import { scoreVacancy } from '../scorer';
-import { upsertVacancy, startScrapeRun, finishScrapeRun, getTodayNewVacancies } from '../db';
-import { generateBatch } from '../cover-letter';
-import type { Scraper, Vacancy } from '../types';
+import { upsertVacancy, upsertUserVacancy, getAllUsers, getRecentVacancyIds, getVacancyById } from '../db';
+import type { UserProfile, Vacancy } from '../types';
 import { HhScraper } from './hh';
-
-/** All available scrapers */
-function createScrapers(): Scraper[] {
-  return [
-    new HhScraper(),
-    // Phase 2: new HabrScraper(),
-    // Phase 3: new TelegramScraper(),
-  ];
-}
+import { HabrScraper } from './habr';
 
 export interface ScrapeResult {
   source: string;
   found: number;
   new: number;
   errors: string[];
-  topScore: number;
 }
 
-/** Run all scrapers, score results, save to DB */
+/**
+ * Build unique search queries from users' custom queries or titles.
+ * Uses user.searchQueries if set, otherwise falls back to title.
+ */
+function buildSearchQueries(users: UserProfile[]): string[] {
+  const queries = new Set<string>();
+
+  for (const user of users) {
+    // Prefer custom search queries
+    if (user.searchQueries.length > 0) {
+      for (const q of user.searchQueries) {
+        queries.add(q.trim());
+      }
+    } else if (user.title) {
+      queries.add(user.title.trim());
+    }
+  }
+
+  return [...queries];
+}
+
+/** Run all scrapers, save vacancies, score for all users */
 export async function runAllScrapers(): Promise<ScrapeResult[]> {
-  const scrapers = createScrapers();
+  const users = getAllUsers();
+
+  if (users.length === 0) {
+    logger.warn('runner', 'No registered users, skipping scrape');
+    return [];
+  }
+
+  const queries = buildSearchQueries(users);
+  if (queries.length === 0) {
+    logger.warn('runner', 'No search queries from users, skipping scrape');
+    return [];
+  }
+
+  logger.info('runner', `Scraping for ${users.length} users, ${queries.length} queries`, {
+    queries: queries.join(', '),
+  });
+
   const results: ScrapeResult[] = [];
+
+  // Run scrapers
+  const scrapers = [new HhScraper(queries), new HabrScraper(queries)];
 
   for (const scraper of scrapers) {
     const result = await runScraper(scraper);
     results.push(result);
   }
 
-  // Generate cover letters for top vacancies (score >= 60)
-  const topNew = getTodayNewVacancies().filter(v => v.score >= 60);
-  if (topNew.length > 0) {
-    const generated = await generateBatch(topNew);
-    logger.info('runner', `Cover letters generated: ${generated}/${topNew.length}`);
-  }
+  // Score recent vacancies for all users
+  scoreForAllUsers(users);
 
   return results;
 }
 
-async function runScraper(scraper: Scraper): Promise<ScrapeResult> {
-  const runId = startScrapeRun(scraper.source);
+async function runScraper(scraper: { source: string; scrape(): Promise<Vacancy[]> }): Promise<ScrapeResult> {
   const result: ScrapeResult = {
     source: scraper.source,
     found: 0,
     new: 0,
     errors: [],
-    topScore: 0,
   };
 
   try {
@@ -59,31 +83,42 @@ async function runScraper(scraper: Scraper): Promise<ScrapeResult> {
 
     for (const vacancy of vacancies) {
       try {
-        const score = scoreVacancy(vacancy);
-        const { inserted } = upsertVacancy({
-          ...vacancy,
-          score: score.total,
-          scoreSkills: score.skills,
-          scoreSalary: score.salary,
-          scoreFormat: score.format,
-          scoreDomain: score.domain,
-        });
-
+        const { inserted } = upsertVacancy(vacancy);
         if (inserted) result.new++;
-        if (score.total > result.topScore) result.topScore = score.total;
       } catch (err) {
         result.errors.push(`${vacancy.externalId}: ${String(err)}`);
       }
     }
 
-    finishScrapeRun(runId, result.found, result.new);
-    logger.info('runner', `${scraper.source}: found=${result.found}, new=${result.new}, top=${result.topScore}`);
+    logger.info('runner', `${scraper.source}: found=${result.found}, new=${result.new}`);
   } catch (err) {
     const errMsg = String(err);
     result.errors.push(errMsg);
-    finishScrapeRun(runId, 0, 0, errMsg);
     logger.error('runner', `${scraper.source} failed`, { error: errMsg });
   }
 
   return result;
+}
+
+/** Score recent vacancies for all users */
+export function scoreForAllUsers(users?: UserProfile[]): void {
+  const allUsers = users ?? getAllUsers();
+  const vacancyIds = getRecentVacancyIds();
+
+  if (vacancyIds.length === 0 || allUsers.length === 0) return;
+
+  let scored = 0;
+
+  for (const user of allUsers) {
+    for (const vacancyId of vacancyIds) {
+      const vacancy = getVacancyById(vacancyId);
+      if (!vacancy) continue;
+
+      const result = scoreVacancy(vacancy, user);
+      upsertUserVacancy(user.id, vacancyId, result.total, result.skills, result.salary, result.format, result.domain);
+      scored++;
+    }
+  }
+
+  logger.info('runner', `Scored ${scored} user-vacancy pairs (${allUsers.length} users x ${vacancyIds.length} vacancies)`);
 }

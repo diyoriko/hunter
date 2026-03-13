@@ -1,28 +1,54 @@
-import { execFile } from 'child_process';
-import { PROFILE } from './profile';
+import { spawn } from 'child_process';
 import { logger } from './logger';
 import { getDb } from './db';
-import type { ScoredVacancy } from './types';
+import type { UserProfile, ScoredVacancy } from './types';
 
-const SYSTEM_PROMPT = `Ты пишешь сопроводительные письма для дизайнера. Формат: короткое, по делу, без пафоса.
+/**
+ * Build a system prompt tailored to the user's profile.
+ * Unlike Hunter's hardcoded prompt, this generates dynamically from user data.
+ */
+function buildSystemPrompt(user: UserProfile): string {
+  const name = user.name ?? 'Кандидат';
+  const title = user.title ?? 'Специалист';
+  const years = user.yearsExperience ?? 0;
+  const skills = user.skills.length > 0 ? user.skills.join(', ') : 'не указаны';
+  const portfolio = user.portfolio ? `Портфолио: ${user.portfolio}` : '';
+  const domains = user.domains.length > 0
+    ? `Предпочтительные отрасли: ${user.domains.map(d => d.name).join(', ')}`
+    : '';
 
-Профиль кандидата:
-- ${PROFILE.name}, ${PROFILE.title}
-- ${PROFILE.yearsExperience} лет опыта
-- Ключевые компании: Skyeng, Qlean, Anywayanyday, FloraDelivery, Teletype, Singularity Hub
-- Навыки: продуктовый дизайн, брендинг, айдентика, UI/UX, лендинги, дизайн-системы
-- Технический бэкграунд: HTML/CSS, TypeScript, автоматизации
-- Figma — основной инструмент
-- Портфолио: diyor.design
+  const aboutSection = user.about
+    ? `--- ОПЫТ И БЭКГРАУНД ---\n${user.about}`
+    : '';
 
-Правила письма:
-1. Максимум 4-5 предложений
-2. Начинай с конкретной связки "ваша задача → мой опыт"
-3. Упоминай 1-2 релевантных проекта из портфолио (только если реально подходят)
-4. Не пиши "с уважением", "буду рад обсудить" и прочий шаблон
-5. Тон: спокойный, фактический, уверенный
-6. Язык: русский, если вакансия на русском. Английский, если на английском
-7. НЕ пиши: "мультидисциплинарный", "passionate", "от идеи до результата"`;
+  return `Ты — ghostwriter. Пишешь сопроводительные письма от имени кандидата. Задача — звучать как живой человек, который прочитал вакансию и сразу понял, почему подходит.
+
+=== ПРОФИЛЬ КАНДИДАТА ===
+
+${name}, ${title}, ${years > 0 ? years + ' лет опыта' : 'начинающий специалист'}.
+Ключевые навыки: ${skills}.
+${portfolio}
+${domains}
+
+${aboutSection}
+
+=== ПРАВИЛА ПИСЬМА ===
+
+1. 4-6 предложений, не больше.
+2. Пиши как человек в чате — как сообщение знакомому рекрутеру, не как заявление.
+3. ПЕРВАЯ СТРОКА = крючок. Сразу связка: что из вакансии → что делал конкретно. Не "Здравствуйте", не "Увидел вакансию".
+4. Если в профиле есть описание опыта — выбирай 1-2 САМЫХ релевантных факта для конкретной вакансии.
+5. Называй конкретные вещи, не абстракции. Если есть метрики — используй.
+6. ${portfolio ? `Последнее предложение ВСЕГДА: "${portfolio}"` : 'Завершай коротко и по делу.'}
+7. Язык: русский, если вакансия на русском. Английский, если на английском.
+
+=== ЗАПРЕЩЕНО ===
+- "с уважением", "буду рад", "готов к диалогу", "рассмотрите кандидатуру"
+- "мультидисциплинарный", "passionate", "от идеи до результата", "закрываю полный цикл"
+- Начинать с названия компании или пересказа вакансии
+- Общие фразы без конкретики ("большой опыт", "умею работать в команде")
+- Выдумывать то, чего нет в профиле выше`;
+}
 
 function buildUserPrompt(v: ScoredVacancy): string {
   const descClean = v.description
@@ -50,74 +76,79 @@ function formatSalaryRange(v: ScoredVacancy): string {
   return `до ${v.salaryTo} ${v.salaryCurrency}`;
 }
 
-/** Run claude CLI with --print flag (uses Max subscription, no API cost) */
+/** Run claude CLI with --print flag */
 function runClaude(prompt: string, systemPrompt: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const fullPrompt = `${systemPrompt}\n\n---\n\n${prompt}`;
 
-    execFile('claude', ['--print', '--model', 'claude-sonnet-4-6', fullPrompt], {
-      timeout: 30_000,
-      maxBuffer: 1024 * 1024,
-    }, (error, stdout, stderr) => {
-      if (error) {
-        reject(new Error(`claude CLI failed: ${stderr || error.message}`));
-        return;
-      }
-      resolve(stdout.trim());
+    const env = { ...process.env };
+    delete env.CLAUDECODE;
+
+    const child = spawn('claude', ['--print', '--model', 'claude-sonnet-4-6'], {
+      env,
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (data: Buffer) => { stdout += data.toString(); });
+    child.stderr.on('data', (data: Buffer) => { stderr += data.toString(); });
+
+    child.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`claude CLI failed (code ${code}): ${stderr}`));
+      } else {
+        resolve(stdout.trim());
+      }
+    });
+
+    child.on('error', (err) => {
+      reject(new Error(`claude CLI failed: ${err.message}`));
+    });
+
+    child.stdin.write(fullPrompt);
+    child.stdin.end();
+
+    setTimeout(() => {
+      child.kill();
+      reject(new Error('claude CLI timeout (60s)'));
+    }, 60_000);
   });
 }
 
-/** Generate cover letter for a single vacancy */
-export async function generateCoverLetter(v: ScoredVacancy): Promise<string> {
-  const text = await runClaude(buildUserPrompt(v), SYSTEM_PROMPT);
+/** Generate cover letter for a user + vacancy */
+export async function generateCoverLetter(user: UserProfile, v: ScoredVacancy, restyle = false): Promise<string> {
+  const systemPrompt = buildSystemPrompt(user);
+  let prompt = buildUserPrompt(v);
 
-  // Save to DB
-  saveCoverLetter(v.id, text);
-
-  return text;
-}
-
-/** Generate cover letters for top vacancies in batch */
-export async function generateBatch(vacancies: ScoredVacancy[]): Promise<number> {
-  let generated = 0;
-
-  for (const v of vacancies) {
-    // Skip if already has a cover letter
-    const existing = getCoverLetter(v.id);
-    if (existing) continue;
-
-    try {
-      await generateCoverLetter(v);
-      generated++;
-      logger.info('cover', `Generated cover letter for "${v.title}" at ${v.company}`);
-    } catch (err) {
-      logger.error('cover', `Failed for vacancy ${v.id}`, { error: String(err) });
+  if (restyle) {
+    const prev = getCoverLetter(user.id, v.id);
+    if (prev) {
+      prompt += `\n\nПредыдущий вариант (НЕ повторяй его, напиши иначе — другая структура, другой заход, другие акценты):\n${prev}`;
     }
-
-    // Small pause between CLI calls
-    await new Promise(r => setTimeout(r, 500));
   }
 
-  logger.info('cover', `Generated ${generated} cover letters`);
-  return generated;
+  const text = await runClaude(prompt, systemPrompt);
+  saveCoverLetter(user.id, v.id, text);
+  return text;
 }
 
 // --- DB operations ---
 
-function saveCoverLetter(vacancyId: number, text: string): void {
+function saveCoverLetter(userId: number, vacancyId: number, text: string): void {
   getDb()
     .prepare(`
-      INSERT INTO cover_letters (vacancy_id, text)
-      VALUES (?, ?)
-      ON CONFLICT(vacancy_id) DO UPDATE SET text = excluded.text, created_at = datetime('now')
+      INSERT INTO cover_letters (user_id, vacancy_id, text)
+      VALUES (?, ?, ?)
+      ON CONFLICT(user_id, vacancy_id) DO UPDATE SET text = excluded.text, created_at = datetime('now')
     `)
-    .run(vacancyId, text);
+    .run(userId, vacancyId, text);
 }
 
-export function getCoverLetter(vacancyId: number): string | null {
+export function getCoverLetter(userId: number, vacancyId: number): string | null {
   const row = getDb()
-    .prepare('SELECT text FROM cover_letters WHERE vacancy_id = ?')
-    .get(vacancyId) as { text: string } | undefined;
+    .prepare('SELECT text FROM cover_letters WHERE user_id = ? AND vacancy_id = ?')
+    .get(userId, vacancyId) as { text: string } | undefined;
   return row?.text ?? null;
 }

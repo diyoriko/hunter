@@ -1,22 +1,27 @@
 import { CONFIG } from '../config';
-import { PROFILE } from '../profile';
 import { logger } from '../logger';
 import type { Vacancy, WorkFormat, ExperienceLevel } from '../types';
 import type { Scraper, HhSearchResponse, HhVacancyFull } from './types';
 
-const AREA_RUSSIA = '113';
+// No area restriction — users may be international
 const PER_PAGE = 100;
-const MAX_PAGES = 5; // 500 vacancies max per query
-const DELAY_MS = 300; // be nice to the API
+const MAX_PAGES = 3;
+const DELAY_MS = 300;
 
+/**
+ * Multi-user HH scraper.
+ * Takes search queries derived from all users' profiles.
+ */
 export class HhScraper implements Scraper {
   readonly source = 'hh.ru' as const;
+
+  constructor(private readonly queries: string[]) {}
 
   async scrape(): Promise<Vacancy[]> {
     const allVacancies: Vacancy[] = [];
     const seenIds = new Set<string>();
 
-    for (const query of PROFILE.searchQueries) {
+    for (const query of this.queries) {
       try {
         const vacancies = await this.searchQuery(query);
         for (const v of vacancies) {
@@ -33,9 +38,7 @@ export class HhScraper implements Scraper {
       await sleep(DELAY_MS);
     }
 
-    // Fetch full descriptions for top candidates (based on snippet pre-scoring)
     const withDescriptions = await this.enrichDescriptions(allVacancies);
-
     logger.info('hh', `Scrape complete: ${withDescriptions.length} vacancies`);
     return withDescriptions;
   }
@@ -47,21 +50,18 @@ export class HhScraper implements Scraper {
     while (page < MAX_PAGES) {
       const params = new URLSearchParams({
         text: query,
-        area: AREA_RUSSIA,
         per_page: String(PER_PAGE),
         page: String(page),
         order_by: 'relevance',
-        period: '3', // last 3 days
+        period: '3',
         only_with_salary: 'false',
-        search_field: 'name', // search in title only for precision
       });
-
-      // Prefer remote
       const url = `${CONFIG.hhBaseUrl}/vacancies?${params}`;
       const response = await fetchWithRetry(url);
 
       if (!response.ok) {
-        logger.warn('hh', `Search returned ${response.status}`, { query, page });
+        const body = await response.text().catch(() => '');
+        logger.warn('hh', `Search returned ${response.status}`, { query, page, body: body.slice(0, 500) });
         break;
       }
 
@@ -79,13 +79,9 @@ export class HhScraper implements Scraper {
     return vacancies;
   }
 
-  /**
-   * Fetch full vacancy descriptions for better scoring.
-   * Only fetches for vacancies that look promising based on snippet.
-   */
   private async enrichDescriptions(vacancies: Vacancy[]): Promise<Vacancy[]> {
     let enriched = 0;
-    const BATCH_SIZE = 20; // Don't hammer the API
+    const BATCH_SIZE = 30;
 
     for (const v of vacancies) {
       if (enriched >= BATCH_SIZE) break;
@@ -103,7 +99,7 @@ export class HhScraper implements Scraper {
 
         await sleep(DELAY_MS);
       } catch {
-        // Skip enrichment on error, snippet is enough
+        // Skip enrichment on error
       }
     }
 
@@ -137,7 +133,6 @@ function parseFormat(scheduleId: string | undefined, title: string, snippet: any
   if (scheduleId === 'remote') return 'remote';
   if (scheduleId === 'flexible') return 'hybrid';
 
-  // Check title and description for remote signals
   const text = `${title} ${snippet?.requirement ?? ''} ${snippet?.responsibility ?? ''}`.toLowerCase();
   if (text.includes('удалённ') || text.includes('удаленн') || text.includes('remote')) return 'remote';
   if (text.includes('гибрид') || text.includes('hybrid')) return 'hybrid';
@@ -178,7 +173,6 @@ async function fetchWithRetry(url: string, retries = 2): Promise<Response> {
       });
 
       if (response.status === 429) {
-        // Rate limited — wait and retry
         const wait = Math.pow(2, i) * 1000;
         logger.warn('hh', `Rate limited, waiting ${wait}ms`);
         await sleep(wait);
