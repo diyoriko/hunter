@@ -3,7 +3,6 @@ import { CONFIG } from './config';
 import { logger } from './logger';
 import { getOrCreateUser, getUserVacancies, getVacancyById, updateUserVacancyStatus, updateUser, getUserStats, markVacanciesNotified } from './db';
 import { handleOnboarding, handleFormatCallback, handleDomainCallback, handleOnboardingNavCallback, askQuestion, showEditMenu, editingSessions, handleEditFieldCallback } from './onboarding';
-import { runAllScrapers } from './scrapers/runner';
 import { getCoverLetter, generateCoverLetter } from './cover-letter';
 import {
   formatVacancyDetail, formatVacancyWithLetter,
@@ -13,9 +12,8 @@ import {
 import type { UserProfile, ScoredVacancy } from './types';
 
 export const mainKeyboard = new Keyboard()
-  .text('🔍 Поиск').text('📋 Дайджест').row()
-  .text('👤 Профиль').text('📊 Статистика').row()
-  .text('🧹 Очистить')
+  .text('📋 Дайджест').text('👤 Профиль').row()
+  .text('📊 Статистика').text('🧹 Очистить')
   .resized()
   .persistent();
 
@@ -66,28 +64,6 @@ async function handleDigest(ctx: Context): Promise<void> {
       `\u041F\u043E\u043A\u0430\u0437\u0430\u043D\u043E ${vacancies.length} \u0438\u0437 ${total}`,
       { reply_markup: new InlineKeyboard().text('\u041F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0435\u0449\u0451', `more:${vacancies.length}`) },
     );
-  }
-}
-
-async function handleScrape(ctx: Context): Promise<void> {
-  await ctx.reply('\u0417\u0430\u043F\u0443\u0441\u043A\u0430\u044E \u043F\u043E\u0438\u0441\u043A...', { reply_markup: mainKeyboard });
-
-  try {
-    const results = await runAllScrapers();
-    const summary = results
-      .map(r => `${r.source}: \u043D\u0430\u0439\u0434\u0435\u043D\u043E ${r.found}, \u043D\u043E\u0432\u044B\u0445 ${r.new}`)
-      .join('\n');
-
-    await ctx.reply(
-      `<b>Поиск завершён</b>\n\n${summary}`,
-      { parse_mode: 'HTML', reply_markup: mainKeyboard },
-    );
-
-    // Auto-show digest after scrape
-    await handleDigest(ctx);
-  } catch (err) {
-    logger.error('bot', 'Scrape failed', { error: String(err) });
-    await ctx.reply(`\u041E\u0448\u0438\u0431\u043A\u0430: ${String(err)}`, { reply_markup: mainKeyboard });
   }
 }
 
@@ -272,15 +248,12 @@ export function createBot(): Bot {
   // --- Slash commands ---
 
   bot.command('digest', requireOnboarded, handleDigest);
-  bot.command('scrape', requireOnboarded, handleScrape);
-  bot.command('search', requireOnboarded, handleScrape);
   bot.command('profile', requireOnboarded, handleProfile);
   bot.command('stats', requireOnboarded, handleStats);
 
   // --- Button handlers ---
 
   bot.hears(/\u0414\u0430\u0439\u0434\u0436\u0435\u0441\u0442/, requireOnboarded, handleDigest);
-  bot.hears(/\u041F\u043E\u0438\u0441\u043A/, requireOnboarded, handleScrape);
   bot.hears(/\u041F\u0440\u043E\u0444\u0438\u043B\u044C/, requireOnboarded, handleProfile);
   bot.hears(/\u0421\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0430/, requireOnboarded, handleStats);
   bot.hears(/\u041E\u0447\u0438\u0441\u0442\u0438\u0442\u044C/, requireOnboarded, handleClear);

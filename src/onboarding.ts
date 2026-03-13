@@ -3,6 +3,8 @@ import { getOrCreateUser, updateUser } from './db';
 import { mainKeyboard } from './bot';
 import { CONFIG } from './config';
 import { escapeHtml } from './digest';
+import { runAllScrapers } from './scrapers/runner';
+import { logger } from './logger';
 import type { OnboardingState, SkillWeight, UserProfile } from './types';
 
 // --- State machine configuration ---
@@ -403,14 +405,26 @@ async function sendComplete(ctx: Context): Promise<void> {
     [
       'Профиль готов! Вот как пользоваться:',
       '',
-      '\uD83D\uDD0D <b>Поиск</b> — собрать вакансии под твой профиль',
       '\uD83D\uDCCB <b>Дайджест</b> — посмотреть подборку вакансий',
       '\uD83D\uDC64 <b>Профиль</b> — посмотреть или редактировать профиль',
+      '\uD83D\uDCCA <b>Статистика</b> — скор, источники, активность',
       '',
-      'Начни с <b>Поиска</b> — я найду вакансии и оценю их под тебя.',
+      'Ищу первые вакансии для тебя...',
     ].join('\n'),
     { parse_mode: 'HTML', reply_markup: mainKeyboard },
   );
+
+  // Auto-scrape for new user
+  try {
+    const results = await runAllScrapers();
+    const totalNew = results.reduce((sum, r) => sum + r.new, 0);
+    await ctx.reply(
+      `Готово! Найдено ${totalNew} новых вакансий. Нажми <b>Дайджест</b>.`,
+      { parse_mode: 'HTML', reply_markup: mainKeyboard },
+    );
+  } catch (err) {
+    logger.warn('onboarding', 'Auto-scrape after onboarding failed', { error: String(err) });
+  }
 }
 
 // --- Search query suggestions ---
