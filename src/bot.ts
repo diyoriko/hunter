@@ -337,7 +337,7 @@ export function createBot(): Bot {
       }
 
       const pageNum = Math.floor(id / DIGEST_PAGE_SIZE) + 1;
-      await ctx.reply(`\u2014 \u2014 \u2014 \u0421\u0442\u0440\u0430\u043D\u0438\u0446\u0430 ${pageNum} \u2014 \u2014 \u2014`);
+      await ctx.reply(`\n<code>  Страница ${pageNum}  </code>`, { parse_mode: 'HTML' });
 
       await sendVacancyCards(ctx, vacancies);
 
