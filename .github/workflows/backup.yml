@@ -1,0 +1,32 @@
+name: Daily SQLite Backup
+
+on:
+  schedule:
+    # 03:00 MSK = 00:00 UTC
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  backup-hunter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Download Hunter database
+        env:
+          BACKUP_TOKEN: ${{ secrets.BACKUP_TOKEN }}
+          HUNTER_URL: ${{ vars.HUNTER_URL }}
+        run: |
+          DATE=$(date -u +%Y-%m-%d)
+          curl -sf --max-time 60 \
+            -H "X-Admin-Token: $BACKUP_TOKEN" \
+            "${HUNTER_URL:-https://hunter-production.up.railway.app}/backup" \
+            -o "jobs-${DATE}.db"
+          ls -lh "jobs-${DATE}.db"
+
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hunter-backup-${{ github.run_number }}
+          path: "*.db"
+          retention-days: 30

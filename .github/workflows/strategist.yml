@@ -1,0 +1,51 @@
+name: Strategist Agent
+
+on:
+  schedule:
+    # 10:00 MSK = 07:00 UTC
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+
+jobs:
+  run-strategist:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run strategist
+        env:
+          CLAUDE_AUTH_TOKEN: ${{ secrets.CLAUDE_AUTH_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          ADMIN_TELEGRAM_ID: ${{ secrets.ADMIN_TELEGRAM_ID }}
+          HUNTER_PROJECT_DIR: ${{ github.workspace }}
+        run: bash agents/strategist/run.sh
+
+      - name: Commit report and backlog updates
+        run: |
+          git config user.name "Hunter Strategist"
+          git config user.email "noreply@hunter.bot"
+          git add reports/strategist/ BACKLOG.md index.html
+          CHANGES=$(git diff --cached --stat)
+          if [ -n "$CHANGES" ]; then
+            git commit -m "strategist: daily report $(date -u +%Y-%m-%d)"
+            git push origin main
+          else
+            echo "No changes to commit"
+          fi
+
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hunter-strategist-${{ github.run_number }}
+          path: reports/strategist/
+          retention-days: 30
