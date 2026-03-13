@@ -409,7 +409,7 @@ export function getUserStats(userId: number): UserStats {
   ).get(userId) as any).c;
 
   const avgRow = d.prepare(
-    'SELECT AVG(score) as avg FROM user_vacancies WHERE user_id = ? AND score > 0'
+    'SELECT AVG(score) as avg FROM user_vacancies WHERE user_id = ? AND score >= 40'
   ).get(userId) as any;
   const avgScore = Math.round(avgRow?.avg ?? 0);
 
