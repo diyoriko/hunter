@@ -58,4 +58,14 @@ export const CONFIG = {
 
   /** Page size for digest pagination */
   pageSize: 15,
+
+  /** Scheduler settings */
+  scheduler: {
+    scrapeCron: '0 6,10,14 * * *', // 09:00, 13:00, 17:00 MSK
+    digestCron: '15 6 * * *',       // 09:15 MSK (after scrape)
+    timezone: 'Europe/Moscow',
+    pushMinScore: 70,
+    pushMaxCards: 5,
+    enabled: process.env.SCHEDULER_ENABLED !== 'false',
+  },
 } as const;
