@@ -1,3 +1,4 @@
+import { InlineKeyboard } from 'grammy';
 import type { ScoredVacancy } from './types';
 
 function scoreEmoji(score: number): string {
@@ -81,6 +82,24 @@ export function formatVacancyLoading(v: ScoredVacancy, text: string = '\u0413\u0
 
 /** Page size for digest pagination */
 export const DIGEST_PAGE_SIZE = 15;
+
+// --- Shared inline keyboards ---
+
+export function vacancyButtons(id: number): InlineKeyboard {
+  return new InlineKeyboard()
+    .text('📝 Письмо', `cover:${id}`)
+    .text('❌ Скрыть', `reject:${id}`)
+    .row()
+    .text('✅ Откликнулся', `applied:${id}`);
+}
+
+export function coverLetterButtons(id: number): InlineKeyboard {
+  return new InlineKeyboard()
+    .text('◀️ Назад', `view:${id}`)
+    .text('🔄 Другой вариант', `restyle:${id}`)
+    .row()
+    .text('✅ Откликнулся', `applied:${id}`);
+}
 
 export function escapeHtml(text: string): string {
   return text

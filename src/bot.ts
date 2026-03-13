@@ -1,13 +1,14 @@
 import { Bot, Context, Keyboard, InlineKeyboard } from 'grammy';
 import { CONFIG } from './config';
 import { logger } from './logger';
-import { getOrCreateUser, getUserVacancies, getVacancyById, updateUserVacancyStatus, updateUser, getUserStats } from './db';
+import { getOrCreateUser, getUserVacancies, getVacancyById, updateUserVacancyStatus, updateUser, getUserStats, markVacanciesNotified } from './db';
 import { handleOnboarding, handleFormatCallback, handleDomainCallback, handleOnboardingNavCallback, askQuestion, showEditMenu, editingSessions, handleEditFieldCallback } from './onboarding';
 import { runAllScrapers } from './scrapers/runner';
 import { getCoverLetter, generateCoverLetter } from './cover-letter';
 import {
   formatVacancyDetail, formatVacancyWithLetter,
   formatVacancyLoading, escapeHtml, DIGEST_PAGE_SIZE,
+  vacancyButtons, coverLetterButtons,
 } from './digest';
 import type { UserProfile, ScoredVacancy } from './types';
 
@@ -17,26 +18,6 @@ export const mainKeyboard = new Keyboard()
   .text('🧹 Очистить')
   .resized()
   .persistent();
-
-function openButton(id: number): InlineKeyboard {
-  return new InlineKeyboard().text('\u041E\u0442\u043A\u0440\u044B\u0442\u044C', `view:${id}`);
-}
-
-function vacancyButtons(id: number): InlineKeyboard {
-  return new InlineKeyboard()
-    .text('📝 Письмо', `cover:${id}`)
-    .text('❌ Скрыть', `reject:${id}`)
-    .row()
-    .text('✅ Откликнулся', `applied:${id}`);
-}
-
-function coverLetterButtons(id: number): InlineKeyboard {
-  return new InlineKeyboard()
-    .text('◀️ Назад', `view:${id}`)
-    .text('🔄 Другой вариант', `restyle:${id}`)
-    .row()
-    .text('✅ Откликнулся', `applied:${id}`);
-}
 
 async function requireOnboarded(ctx: Context, next: () => Promise<void>): Promise<void> {
   if (!ctx.from) return;
@@ -78,6 +59,7 @@ async function handleDigest(ctx: Context): Promise<void> {
   );
 
   await sendVacancyCards(ctx, vacancies);
+  markVacanciesNotified(user.id, vacancies.map(v => v.id));
 
   if (total > vacancies.length) {
     await ctx.reply(
@@ -340,6 +322,7 @@ export function createBot(): Bot {
       await ctx.reply(`\n<code>  Страница ${pageNum}  </code>`, { parse_mode: 'HTML' });
 
       await sendVacancyCards(ctx, vacancies);
+      markVacanciesNotified(user.id, vacancies.map(v => v.id));
 
       const shown = id + vacancies.length;
       if (shown < total) {

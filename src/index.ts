@@ -4,6 +4,7 @@ import { createBot } from './bot';
 import { getDb, getKV, setKV } from './db';
 import { CONFIG } from './config';
 import { logger } from './logger';
+import { startScheduler, stopScheduler } from './scheduler';
 
 async function notifyDeploy(bot: Bot): Promise<void> {
   const lastVersion = getKV('deployed_version');
@@ -60,6 +61,7 @@ async function main() {
   // Graceful shutdown — stop polling before Railway kills the process
   const shutdown = () => {
     logger.info('main', 'Shutting down gracefully...');
+    stopScheduler();
     bot.stop();
   };
   process.once('SIGTERM', shutdown);
@@ -69,6 +71,7 @@ async function main() {
   await bot.start({
     onStart: async () => {
       logger.info('main', 'Bot is running. Polling started.');
+      startScheduler(bot);
       await notifyDeploy(bot);
     },
   });

@@ -116,10 +116,16 @@ function initSchema() {
     }
   }
 
-  // Check user_vacancies for score_domain
+  // Check user_vacancies for score_domain and notified
   const uvCols = getDb().prepare("PRAGMA table_info(user_vacancies)").all() as { name: string }[];
   if (!uvCols.some(c => c.name === 'score_domain')) {
     try { getDb().exec("ALTER TABLE user_vacancies ADD COLUMN score_domain INTEGER NOT NULL DEFAULT 0"); } catch { /* ok */ }
+  }
+  if (!uvCols.some(c => c.name === 'notified')) {
+    try {
+      getDb().exec("ALTER TABLE user_vacancies ADD COLUMN notified INTEGER NOT NULL DEFAULT 0");
+      getDb().exec("CREATE INDEX IF NOT EXISTS idx_uv_unnotified ON user_vacancies(user_id, notified, score DESC)");
+    } catch { /* ok */ }
   }
 
   logger.info('db', 'Schema initialized');
@@ -332,6 +338,45 @@ export function getRecentVacancyIds(): number[] {
 export function getAllUsers(): UserProfile[] {
   const rows = getDb().prepare("SELECT * FROM users WHERE onboarding_state = 'complete'").all() as any[];
   return rows.map(rowToUser);
+}
+
+// --- Scheduler helpers ---
+
+export function getUnnotifiedHighScoreVacancies(userId: number, minScore: number = 70): ScoredVacancy[] {
+  const rows = getDb().prepare(`
+    SELECT v.*, uv.score, uv.score_skills, uv.score_salary, uv.score_format,
+           COALESCE(uv.score_domain, 0) as score_domain, uv.status,
+           uv.created_at as uv_created_at
+    FROM user_vacancies uv
+    JOIN vacancies v ON v.id = uv.vacancy_id
+    WHERE uv.user_id = ? AND uv.notified = 0 AND uv.status = 'new' AND uv.score >= ?
+    ORDER BY uv.score DESC
+  `).all(userId, minScore) as any[];
+  return rows.map(rowToScoredVacancy);
+}
+
+export function markVacanciesNotified(userId: number, vacancyIds: number[]): void {
+  if (vacancyIds.length === 0) return;
+  const placeholders = vacancyIds.map(() => '?').join(',');
+  getDb().prepare(`
+    UPDATE user_vacancies SET notified = 1
+    WHERE user_id = ? AND vacancy_id IN (${placeholders})
+  `).run(userId, ...vacancyIds);
+}
+
+export function getDigestSummary(userId: number): { total: number; highScore: number } {
+  const d = getDb();
+  const total = (d.prepare(`
+    SELECT COUNT(*) as c FROM user_vacancies
+    WHERE user_id = ? AND notified = 0 AND status = 'new' AND score >= 40
+  `).get(userId) as any).c;
+
+  const highScore = (d.prepare(`
+    SELECT COUNT(*) as c FROM user_vacancies
+    WHERE user_id = ? AND notified = 0 AND status = 'new' AND score >= 70
+  `).get(userId) as any).c;
+
+  return { total, highScore };
 }
 
 export interface UserStats {
