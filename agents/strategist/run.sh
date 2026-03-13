@@ -11,8 +11,11 @@ DATE=$(date +%Y-%m-%d)
 REPORT_FILE="$REPORTS_DIR/$DATE.md"
 TMP_PROMPT=$(mktemp)
 
-# Telegram notification config
-BOT_TOKEN=$(grep TELEGRAM_BOT_TOKEN "$PROJECT_DIR/.env" | cut -d= -f2)
+# Telegram notification config — prefer env var, fall back to .env file
+BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
+if [ -z "$BOT_TOKEN" ] && [ -f "$PROJECT_DIR/.env" ]; then
+  BOT_TOKEN=$(grep TELEGRAM_BOT_TOKEN "$PROJECT_DIR/.env" | cut -d= -f2)
+fi
 ADMIN_CHAT_ID="${ADMIN_TELEGRAM_ID:?Set ADMIN_TELEGRAM_ID env var}"
 
 # PATH for claude CLI and node (Mac-specific paths added only if they exist)
