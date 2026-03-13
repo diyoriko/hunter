@@ -91,7 +91,7 @@ bash "$AGENT_DIR/extract-tasks.sh" "$REPORT_FILE" "$PROJECT_DIR/BACKLOG.md" || \
 
 # Sync backlog.html with updated BACKLOG.md
 echo "$(date -Iseconds) Syncing backlog.html..."
-bash "$AGENT_DIR/sync-backlog.sh" "$PROJECT_DIR/BACKLOG.md" "$PROJECT_DIR/backlog.html" || \
+bash "$AGENT_DIR/sync-backlog.sh" "$PROJECT_DIR/BACKLOG.md" "$PROJECT_DIR/index.html" || \
   echo "$(date -Iseconds) Backlog sync failed (non-critical)"
 
 # Send Telegram notification (plain text, avoid HTML parsing issues)
