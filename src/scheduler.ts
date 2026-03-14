@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import type { Bot } from 'grammy';
 import { runAllScrapers } from './scrapers/runner';
-import { getAllUsers, getUnnotifiedHighScoreVacancies, markVacanciesNotified, getDigestSummary, setKV, isProUser, expireProPlans } from './db';
+import { getAllUsers, getUnnotifiedHighScoreVacancies, markVacanciesNotified, getDigestSummary, getKV, setKV, isProUser, expireProPlans, getUsersExpiringWithin } from './db';
 import { formatVacancyDetail, vacancyButtons } from './digest';
 import { logger } from './logger';
 import { CONFIG } from './config';
@@ -54,6 +54,7 @@ async function runScheduledScrape(bot: Bot): Promise<void> {
     });
 
     await sendPushNotifications(bot);
+    await sendRenewalReminders(bot);
     setKV('last_auto_scrape', new Date().toISOString());
   } catch (err) {
     logger.error('scheduler', 'Scheduled scrape failed', { error: String(err) });
@@ -136,6 +137,43 @@ async function sendMorningDigest(bot: Bot): Promise<void> {
   }
 
   logger.info('scheduler', `Morning digest sent to ${sent} users`);
+}
+
+async function sendRenewalReminders(bot: Bot): Promise<void> {
+  const lastReminder = getKV('last_renewal_reminder');
+  const today = new Date().toISOString().slice(0, 10);
+  if (lastReminder === today) return; // once per day
+
+  const expiring = getUsersExpiringWithin(3);
+  let sent = 0;
+
+  for (const user of expiring) {
+    try {
+      const expiresDate = user.planExpiresAt!.toLocaleDateString('ru-RU', {
+        day: 'numeric', month: 'long',
+      });
+      await bot.api.sendMessage(
+        user.telegramId,
+        [
+          '<b>Напоминание о подписке</b>',
+          '',
+          `Твой Pro-план истекает ${expiresDate}.`,
+          'Продли подписку, чтобы не потерять безлимит.',
+          '',
+          '/subscribe — продлить',
+        ].join('\n'),
+        { parse_mode: 'HTML' },
+      );
+      sent++;
+    } catch (err) {
+      logger.warn('scheduler', `Renewal reminder failed for user ${user.telegramId}`, { error: String(err) });
+    }
+  }
+
+  if (sent > 0) {
+    logger.info('scheduler', `Renewal reminders sent to ${sent} user(s)`);
+  }
+  setKV('last_renewal_reminder', today);
 }
 
 function sleep(ms: number): Promise<void> {

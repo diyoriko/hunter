@@ -11,25 +11,22 @@ const parsed = envSchema.parse(process.env);
 
 export const CONFIG = {
   /** Bot version — bump on each deploy */
-  version: '0.3.0',
+  version: '0.4.0',
 
   /** Admin Telegram ID for deploy notifications */
   adminTelegramId: parsed.ADMIN_TELEGRAM_ID,
 
   /** Human-readable deploy notes (non-technical!) */
   deployNotes: [
-    '✅ <b>Freemium-модель</b>',
-    '      Free: 5 писем, 15 вакансий в дайджесте, 2 push-алерта',
-    '      Pro: безлимит всего + полные push-алерты',
+    '✅ <b>Оплата через Telegram Stars</b>',
+    '      Pro подписка: 700 Stars/мес или 6720/год (-20%)',
+    '      Кредиты: 100 Stars = 3 письма, 300 Stars = 10 писем',
     '',
-    '✅ <b>Команда /subscribe</b>',
-    '      Посмотри тарифы и лимиты прямо в боте',
+    '✅ <b>Deploy-отчёт</b>',
+    '      После каждого обновления — метрики: юзеры, вакансии, средний скор',
     '',
-    '✅ <b>Paywall</b>',
-    '      Когда лимит закончится — подсказка с тарифами',
-    '',
-    '✅ <b>Кредиты</b>',
-    '      Разовая покупка кредитов для генерации писем без подписки',
+    '✅ <b>Напоминание о продлении</b>',
+    '      За 3 дня до окончания Pro — push-напоминание',
   ],
 
   telegramBotToken: parsed.TELEGRAM_BOT_TOKEN,
@@ -83,5 +80,13 @@ export const CONFIG = {
       pushMaxCards: 5,
     },
     creditsPerLetter: 5,       // 1 cover letter = 5 credits
+  },
+
+  /** Telegram Stars pricing */
+  stars: {
+    proMonthly: 700,           // ~$7.70
+    proYearly: 6720,           // ~20% off vs 700×12
+    creditsSmall: { stars: 100, letters: 3 },   // 100 Stars = 15 credits (3 letters)
+    creditsLarge: { stars: 300, letters: 10 },   // 300 Stars = 50 credits (10 letters)
   },
 } as const;

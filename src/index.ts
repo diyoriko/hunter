@@ -13,6 +13,8 @@ async function notifyDeploy(bot: Bot): Promise<void> {
 
   const date = new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
 
+  const m = getGlobalStats();
+
   const text = [
     `🚀 <b>Hunter ${CONFIG.version}</b>`,
     `<i>${date}</i>`,
@@ -20,6 +22,15 @@ async function notifyDeploy(bot: Bot): Promise<void> {
     '━━━━━━━━━━━━━━━━━━━━',
     '',
     ...CONFIG.deployNotes,
+    '',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '',
+    '<b>📊 Метрики</b>',
+    `  Юзеров: ${m.totalUsers}`,
+    `  Pro: ${m.proUsers}`,
+    `  Вакансий: ${m.totalVacancies}`,
+    `  Писем: ${m.totalCoverLetters}`,
+    `  Средний скор: ${m.avgScore}`,
   ].join('\n');
 
   try {
