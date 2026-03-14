@@ -1,0 +1,5 @@
+#!/bin/sh
+set -e
+echo "Pre-commit: type check..."
+npm run typecheck
+echo "Type check passed."
