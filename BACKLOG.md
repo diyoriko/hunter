@@ -61,7 +61,6 @@
 
 ### P0: Остаток
 
-- [ ] **Anthropic SDK для cover letters** — заменить `spawn('claude', ...)` на `@anthropic-ai/sdk` в cover-letter.ts. Cover letters сломаны на Railway т.к. binary не установлен
 - [ ] **Переименовать бота** — "Design Jobs Bot" → выбрать название в @BotFather (учесть расширение за пределы дизайна)
 - [ ] **Deploy report** — после деплоя бот шлёт админу: статус сервисов, список изменений, метрики (юзеры, вакансии, avg score)
 
@@ -105,7 +104,7 @@
 ### P1: Скоринг и данные
 
 - [ ] **Fix salary scoring bug** — `if (midVacancy > userMax) return 90` логически неверно: вакансия выше диапазона получает почти максимум. Скорректировать: до 30% выше → 75, 30-60% → 50, сильно выше → 30
-- [ ] **Проверка timezone scheduler на Railway** — убедиться что node-cron с Europe/Moscow работает в Railway (UTC). Лог: запускается ли scrape в 09:00 MSK
+- [ ] **Проверка timezone scheduler на Railway** — убедиться что node-cron с Europe/Moscow работает в Railway (UTC)
 - [ ] **SQLite busy_timeout** — добавить `PRAGMA busy_timeout = 5000` при инициализации БД
 - [ ] **Качественный порог скора** — проанализировать распределение, поднять порог если нужно (сейчас 40)
 - [ ] **"Скрыть" = навсегда** — rejected status сохраняется и не возвращается при повторном скрейпе
@@ -160,7 +159,7 @@
 
 - [ ] **Импорт резюме** — парсинг PDF/DOCX или hh.ru профиль
 - [ ] **A/B cover letters** — Haiku (быстрый) vs Sonnet (качественный)
-- [ ] **Anthropic API** — заменить CLI на SDK для масштабируемости
+- [ ] **Anthropic SDK** — заменить CLI на `@anthropic-ai/sdk` (скорость + надёжность при масштабе). Пока CLI работает на Railway бесплатно через Max
 
 ### P2: Расширение аудитории
 
