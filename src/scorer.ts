@@ -125,7 +125,14 @@ function scoreSalary(v: Vacancy, user: UserProfile): number {
   const userMax = user.salaryMax ?? userMin * 1.5;
 
   if (midVacancy >= userMin && midVacancy <= userMax) return 100;
-  if (midVacancy > userMax) return 90;
+
+  // Above user's max — tiered penalty
+  if (midVacancy > userMax) {
+    const overRatio = (midVacancy - userMax) / userMax;
+    if (overRatio <= 0.3) return 75;   // up to 30% above
+    if (overRatio <= 0.6) return 50;   // 30-60% above
+    return 30;                          // 60%+ above
+  }
 
   const ratio = midVacancy / userMin;
   if (ratio >= 0.8) return 60;

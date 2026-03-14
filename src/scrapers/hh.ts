@@ -6,7 +6,7 @@ import type { Scraper, HhSearchResponse, HhVacancyFull } from './types';
 // No area restriction — users may be international
 const PER_PAGE = 100;
 const MAX_PAGES = 3;
-const DELAY_MS = 300;
+function randomDelay(): number { return 1000 + Math.random() * 2000; }
 
 /**
  * Multi-user HH scraper.
@@ -35,7 +35,7 @@ export class HhScraper implements Scraper {
         logger.error('hh', `Query "${query}" failed`, { error: String(err) });
       }
 
-      await sleep(DELAY_MS);
+      await sleep(randomDelay());
     }
 
     const withDescriptions = await this.enrichDescriptions(allVacancies);
@@ -73,7 +73,7 @@ export class HhScraper implements Scraper {
 
       if (page >= data.pages - 1) break;
       page++;
-      await sleep(DELAY_MS);
+      await sleep(randomDelay());
     }
 
     return vacancies;
@@ -97,7 +97,7 @@ export class HhScraper implements Scraper {
           enriched++;
         }
 
-        await sleep(DELAY_MS);
+        await sleep(randomDelay());
       } catch {
         // Skip enrichment on error
       }
