@@ -1,5 +1,7 @@
 // --- User Profile (built via onboarding) ---
 
+export type Plan = 'free' | 'pro';
+
 export interface SkillWeight {
   name: string;
   weight: number;
@@ -37,6 +39,14 @@ export interface UserProfile {
   /** Onboarding state machine */
   onboardingState: OnboardingState;
   createdAt: Date;
+  /** Subscription plan */
+  plan: Plan;
+  /** Pro plan expiration (null = no expiry / free) */
+  planExpiresAt: Date | null;
+  /** Cover letters generated (lifetime, free plan limit) */
+  lettersUsed: number;
+  /** Purchased credits (1 cover letter = 5 credits) */
+  credits: number;
 }
 
 export type OnboardingState =

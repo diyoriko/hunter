@@ -2,9 +2,9 @@
 
 ## Overview
 
-**Hunter** (@jobhunt_ai_bot, "Design Jobs Bot") — мультиюзерный Telegram-бот для поиска вакансий. Скрейпит hh.ru и Habr, скорит вакансии под профиль каждого пользователя, показывает персонализированный дайджест и генерирует сопроводительные письма через Claude CLI.
+**Hunter** (@jobhunt_ai_bot) — мультиюзерный Telegram-бот для поиска вакансий с freemium-моделью. Скрейпит hh.ru и Habr, скорит вакансии под профиль каждого пользователя, показывает персонализированный дайджест и генерирует сопроводительные письма через Claude CLI.
 
-**Цель:** платная подписка, SaaS-модель.
+**Цель:** платная подписка через Telegram Stars, SaaS-модель.
 
 ## Stack
 
@@ -14,18 +14,19 @@
 - **Scrapers:** hh.ru API, Habr Career API (cheerio)
 - **AI:** Claude CLI (`claude --print --model claude-sonnet-4-6`)
 - **Validation:** zod
-- **Hosting (dev):** macOS launchd (KeepAlive)
-- **Hosting (prod):** TBD (Railway / VPS)
+- **Scheduler:** node-cron (3x/день скрейп + push + утренний дайджест)
+- **Hosting:** Railway 24/7 (автодеплой из main)
 
 ## Architecture
 
 ```
 src/
-├── index.ts          # Entry point, bot launch, commands registration
-├── bot.ts            # Telegram handlers (commands, buttons, callbacks)
-├── db.ts             # SQLite schema, CRUD, multi-user data layer
-├── types.ts          # TypeScript interfaces (UserProfile, Vacancy, ScoredVacancy)
-├── config.ts         # Environment config via zod
+├── index.ts          # Entry point, bot launch, HTTP server, graceful shutdown
+├── bot.ts            # Telegram handlers (commands, buttons, callbacks, freemium guards)
+├── db.ts             # SQLite schema, CRUD, multi-user data layer, plan helpers
+├── types.ts          # TypeScript interfaces (UserProfile, Vacancy, Plan)
+├── config.ts         # Environment config via zod + freemium limits
+├── scheduler.ts      # node-cron: auto-scrape, push notifications, morning digest
 ├── scorer.ts         # Vacancy scoring: skills 40%, salary 25%, format 20%, domain 15% + penalties
 ├── onboarding.ts     # User profile setup state machine (14 states)
 ├── digest.ts         # Vacancy formatting for Telegram (cards, detail, letters)
@@ -40,38 +41,46 @@ src/
 
 ## Database Schema
 
-- **users** — profiles with onboarding state
+- **users** — profiles with onboarding state + plan/credits/letters_used
 - **vacancies** — shared pool (deduped by source + external_id)
-- **user_vacancies** — per-user scores and status (new/applied/rejected)
+- **user_vacancies** — per-user scores, status (new/applied/rejected), notified flag
 - **cover_letters** — per-user cached letters
+- **kv** — key-value store (deploy tracking, scheduler state)
+
+## Freemium Model
+
+| | Free | Pro |
+|--|------|-----|
+| Cover letters | 5 lifetime | Безлимит |
+| Дайджест | 15 вакансий | Безлимит |
+| Push-алерты | 2/скрейп | 5/скрейп |
+| Credits | Покупаются отдельно | — |
+
+- 1 cover letter = 5 credits (разовая покупка без подписки)
+- Pro: 500 Stars/мес, 4800 Stars/год (-20%)
+- /subscribe — тарифы и лимиты
+- Guards в bot.ts: checkCoverLetterLimit(), consumeCoverLetterQuota()
+- Auto-expire: scheduler проверяет plan_expires_at каждый скрейп
 
 ## Key Design Decisions
 
-- **No area filter on hh.ru** — users may be international (area=113 blocks from Turkey)
+- **No area filter on hh.ru** — users may be international
 - **Browser User-Agent** — hh.ru blacklists bot UAs
-- **Scoring is per-user** — skills 40% (weighted), salary 25%, format 20%, domain 15%, red flags penalty (/2), company blacklist (=0)
+- **Scoring is per-user** — skills 40%, salary 25%, format 20%, domain 15%, red flags /2, blacklist =0
 - **Owner seeded** — ADMIN_TELEGRAM_ID pre-loaded with minimal profile
 - **Cover letters via CLI** — no API key needed, uses Max subscription auth
-- **Vacancies shown expanded** — no "Открыть" step, full detail + buttons immediately
+- **Vacancies shown expanded** — full detail + buttons immediately
+- **Auto-scrape** — 3x/день (09:00, 13:00, 17:00 MSK), без ручного Поиска
 
 ## Bot UX
 
-**Main keyboard:** Поиск | Дайджест | Профиль | Статистика | Очистить
+**Main keyboard:** Дайджест | Профиль | Статистика | Очистить
+
+**Commands:** /start, /digest, /profile, /stats, /subscribe
 
 **Vacancy buttons:** Письмо | Скрыть (row 1), Откликнулся (row 2)
 
 **Cover letter buttons:** Назад | Другой вариант (row 1), Откликнулся (row 2)
-
-**Поиск** auto-shows digest after scrape completes.
-
-## Known Limitations
-
-- **CLI удалён** — `src/cli.ts` и `src/scheduler.ts` удалены при переходе на мультиюзер. Скрейп только через бот.
-- **Cover letters через CLI** — `claude --print` медленный (10-15с), для масштабирования нужен Anthropic SDK
-- **Admin ID** — через env var ADMIN_TELEGRAM_ID
-- **Нет rate limiting** — /search можно спамить, hh.ru может забанить
-- **Нет лимитов** — все фичи бесплатны, нет freemium gates
-- **Нет scheduler** — автоскрейп не работает, только ручной через кнопку
 
 ## Running
 
@@ -81,9 +90,6 @@ npm run dev
 
 # Build & run
 npm run build && npm start
-
-# Launchd (production on Mac)
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.hunter.bot.plist
 ```
 
 ## Environment
@@ -98,10 +104,10 @@ ADMIN_TELEGRAM_ID=...     # Owner Telegram ID for deploy notifications & seed
 
 | Agent | Schedule | Purpose |
 |-------|----------|---------|
-| Strategist | Ежедневно 10:00 MSK | Анализ проекта, фичи, монетизация → BACKLOG.md |
+| Strategist | Ежедневно 09:30 MSK | Анализ проекта, фичи, монетизация → BACKLOG.md |
 
 ## Quality Gate
 
 - `npx tsc --noEmit` перед каждым деплоем
-- Restart: `launchctl bootout` → `launchctl bootstrap`
-- Логи: `~/Library/Logs/Hunter/bot.out.log`
+- Graceful shutdown: SIGTERM → stopScheduler + bot.stop
+- Логи: structured JSON via logger.ts

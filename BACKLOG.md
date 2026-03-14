@@ -1,7 +1,7 @@
 # Hunter — Backlog
 
 > Источник правды для задач. Стратег добавляет, владелец приоритизирует.
-> Последнее обновление: 2026-03-13 (глубокий аудит)
+> Последнее обновление: 2026-03-14
 
 ---
 
@@ -13,17 +13,18 @@
 - [x] Скоринг: навыки 40%, зп 25%, формат 20%, отрасль 15%
 - [x] Персонализированный дайджест с пагинацией
 - [x] Cover letters через Claude CLI (Sonnet)
-- [x] Кнопки: Поиск, Дайджест, Профиль, Статистика, Очистить
+- [x] Кнопки: Дайджест, Профиль, Статистика, Очистить
 - [x] Owner seed (пропуск онбординга)
 - [x] Агент-стратег (launchd, ежедневно)
 - [x] Inline-кнопки в онбординге (Пропустить, Назад)
 - [x] 22 отрасли + свободный ввод
-- [x] Переписано описание бота
 - [x] Field-by-field редактирование (12 полей) с escape hatch
 - [x] Deploy-уведомления в Telegram
-- [x] UX-аудит 8 флоу (34 проблемы найдены)
 - [x] Railway 24/7: volume, healthcheck, env vars, автодеплой
 - [x] Admin ID в config
+- [x] Scheduler: node-cron 3x/день + push + утренний дайджест
+- [x] Убрана кнопка «Поиск» + автоскрейп после онбординга
+- [x] Graceful shutdown (SIGTERM → stopScheduler + bot.stop)
 
 ---
 
@@ -39,21 +40,24 @@
 
 ### P0: Freemium лимиты (gates перед оплатой)
 
-- [ ] **Schema migration** — добавить в users: plan, plan_expires_at, searches_today, searches_reset_at, letters_used, credits
-- [ ] **Лимиты Free** — 3 поиска/день, 5 cover letters всего (lifetime), 15 вакансий в дайджесте
-- [ ] **Лимиты Pro** — безлимит поисков/писем, полные push-алерты, утренний дайджест с карточками
-- [ ] **Guards** — проверка лимитов в bot.ts перед handleScrape и generateCoverLetter
-- [ ] **Paywall UX** — "Бесплатные генерации закончились. Pro — безлимит + алерты: /subscribe"
-- [ ] **Сброс счётчиков** — ежедневно для searches (cron в scheduler)
+- [x] **Schema migration** — plan, plan_expires_at, letters_used, credits в users
+- [x] **Лимиты Free** — 5 cover letters (lifetime), 15 вакансий в дайджесте, 2 push-алерта
+- [x] **Лимиты Pro** — безлимит писем/дайджеста, 5 push-алертов
+- [x] **Guards** — проверка лимитов перед generateCoverLetter и restyle, лимит дайджеста/пагинации
+- [x] **Paywall UX** — "Лимит исчерпан" с ссылкой на /subscribe
+- [x] **Команда /subscribe** — тарифы Free/Pro/Год + кредиты
+- [x] **Plan info** — план и остаток в статистике
+- [x] **Auto-expire** — scheduler проверяет и деактивирует истёкшие Pro-планы
+- [x] **Credits система** — кредиты как альтернатива подписке (1 письмо = 5 кредитов)
 
 ### P0: Telegram Stars оплата — гибридная модель
 
-- [ ] **Команда /subscribe** — показать Pro план + credits пакеты
+- [x] **Команда /subscribe** — тарифы, лимиты, кредиты (UI ready)
 - [ ] **Pro подписка** — ctx.replyWithInvoice(), 500 Stars/мес (~$5.50)
 - [ ] **Credits пакеты** — 50 Stars = 10 credits, 200 Stars = 50 credits (1 cover letter = 5 credits)
 - [ ] **pre_checkout_query + successful_payment** — обработка оплаты, обновление plan/credits в БД
 - [ ] **Напоминание о продлении** — за 3 дня до окончания Pro
-- [ ] **Годовой план** — 4800 Stars/год (скидка 20% vs 500×12=6000), добавить в /subscribe рядом с месячным
+- [ ] **Годовой план** — 4800 Stars/год (скидка 20% vs 500×12=6000)
 
 ### P0: Остаток
 

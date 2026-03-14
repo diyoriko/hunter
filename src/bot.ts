@@ -1,7 +1,7 @@
 import { Bot, Context, Keyboard, InlineKeyboard } from 'grammy';
 import { CONFIG } from './config';
 import { logger } from './logger';
-import { getOrCreateUser, getUserVacancies, getVacancyById, updateUserVacancyStatus, updateUser, getUserStats, markVacanciesNotified } from './db';
+import { getOrCreateUser, getUserVacancies, getVacancyById, updateUserVacancyStatus, updateUser, getUserStats, markVacanciesNotified, isProUser, incrementLettersUsed, useCredits } from './db';
 import { handleOnboarding, handleFormatCallback, handleDomainCallback, handleOnboardingNavCallback, askQuestion, showEditMenu, editingSessions, handleEditFieldCallback } from './onboarding';
 import { getCoverLetter, generateCoverLetter } from './cover-letter';
 import {
@@ -41,28 +41,43 @@ async function requireOnboarded(ctx: Context, next: () => Promise<void>): Promis
 
 async function handleDigest(ctx: Context): Promise<void> {
   const user = getOrCreateUser(ctx.from!.id);
+  const pro = isProUser(user);
+  const maxDigest = pro ? Infinity : CONFIG.freemium.free.digestPageSize;
   const { vacancies, total } = getUserVacancies(user.id, 0, DIGEST_PAGE_SIZE);
 
   if (vacancies.length === 0) {
     await ctx.reply(
-      '\u041D\u0435\u0442 \u0440\u0435\u043B\u0435\u0432\u0430\u043D\u0442\u043D\u044B\u0445 \u0432\u0430\u043A\u0430\u043D\u0441\u0438\u0439. \u041D\u0430\u0436\u043C\u0438 \u041F\u043E\u0438\u0441\u043A, \u0447\u0442\u043E\u0431\u044B \u0441\u043E\u0431\u0440\u0430\u0442\u044C \u043D\u043E\u0432\u044B\u0435.',
+      'Нет релевантных вакансий. Новые появятся после автоматического поиска.',
       { reply_markup: mainKeyboard },
     );
     return;
   }
 
+  const shownCount = Math.min(vacancies.length, maxDigest);
+  const displayVacancies = vacancies.slice(0, shownCount);
+  const subtitle = total > shownCount ? `\nВот ${shownCount} лучших:` : '';
+
   await ctx.reply(
-    `<b>\u0414\u0430\u0439\u0434\u0436\u0435\u0441\u0442</b> \u2014 ${total} \u0432\u0430\u043A\u0430\u043D\u0441\u0438\u0439 \u043F\u043E\u0434 \u0442\u0435\u0431\u044F`,
+    `<b>Дайджест</b> — ${total} вакансий под тебя${subtitle}`,
     { parse_mode: 'HTML', reply_markup: mainKeyboard },
   );
 
-  await sendVacancyCards(ctx, vacancies);
-  markVacanciesNotified(user.id, vacancies.map(v => v.id));
+  await sendVacancyCards(ctx, displayVacancies);
+  markVacanciesNotified(user.id, displayVacancies.map(v => v.id));
 
-  if (total > vacancies.length) {
+  // Free plan: show paywall after limited digest
+  if (!pro && total > maxDigest) {
     await ctx.reply(
-      `\u041F\u043E\u043A\u0430\u0437\u0430\u043D\u043E ${vacancies.length} \u0438\u0437 ${total}`,
-      { reply_markup: new InlineKeyboard().text('\u041F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0435\u0449\u0451', `more:${vacancies.length}`) },
+      paywallText('digest', user),
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+
+  if (total > displayVacancies.length) {
+    await ctx.reply(
+      `Показано ${displayVacancies.length} из ${total}`,
+      { reply_markup: new InlineKeyboard().text('Показать ещё', `more:${displayVacancies.length}`) },
     );
   }
 }
@@ -108,6 +123,7 @@ async function handleProfile(ctx: Context): Promise<void> {
 async function handleStats(ctx: Context): Promise<void> {
   const user = getOrCreateUser(ctx.from!.id);
   const s = getUserStats(user.id);
+  const pro = isProUser(user);
 
   const sourceLinks: Record<string, string> = {
     'hh.ru': 'https://hh.ru',
@@ -121,8 +137,16 @@ async function handleStats(ctx: Context): Promise<void> {
     })
     .join('\n');
 
+  const remainingLetters = Math.max(0, CONFIG.freemium.free.coverLetters - user.lettersUsed);
+  const planLine = pro
+    ? `План: <b>Pro</b>${user.planExpiresAt ? ` (до ${user.planExpiresAt.toLocaleDateString('ru-RU')})` : ''}`
+    : `План: <b>Free</b> — писем осталось: ${remainingLetters}/${CONFIG.freemium.free.coverLetters}`;
+
   const text = [
     '<b>📊 Статистика</b>',
+    '',
+    planLine,
+    user.credits > 0 ? `Кредитов: ${user.credits}` : '',
     '',
     `📋 Всего вакансий: ${s.total}`,
     `🎯 Релевантных (40+): ${s.relevant}`,
@@ -147,7 +171,7 @@ async function handleStats(ctx: Context): Promise<void> {
     '⚠️ <b>Штрафы:</b> red flags = скор /2, блеклист = скор 0.',
     '',
     'В дайджест попадают вакансии со скором 40+.',
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 
   await ctx.reply(text, { parse_mode: 'HTML', reply_markup: mainKeyboard });
 }
@@ -167,6 +191,55 @@ async function handleClear(ctx: Context): Promise<void> {
   }
 
   await ctx.reply(`🧹 Удалено ${deleted} сообщений`, { reply_markup: mainKeyboard });
+}
+
+async function handleSubscribe(ctx: Context): Promise<void> {
+  const user = getOrCreateUser(ctx.from!.id);
+  const pro = isProUser(user);
+
+  if (pro) {
+    const expires = user.planExpiresAt
+      ? user.planExpiresAt.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
+      : 'бессрочно';
+    await ctx.reply(
+      `<b>У тебя Pro!</b>\n\nДействует до: ${expires}\nКредитов: ${user.credits}`,
+      { parse_mode: 'HTML', reply_markup: mainKeyboard },
+    );
+    return;
+  }
+
+  const remaining = Math.max(0, CONFIG.freemium.free.coverLetters - user.lettersUsed);
+
+  const text = [
+    '<b>Тарифы Hunter</b>',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '',
+    '<b>Free</b> (текущий)',
+    `  Писем: ${remaining} из ${CONFIG.freemium.free.coverLetters} осталось`,
+    `  Дайджест: ${CONFIG.freemium.free.digestPageSize} вакансий`,
+    '  Push: 2 вакансии/скрейп',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '',
+    '<b>Pro — 500 Stars/мес</b> (~350 руб)',
+    '  Безлимит писем и дайджест',
+    '  Push-алерты: 5 вакансий/скрейп',
+    '  Утренний дайджест',
+    '',
+    '<b>Pro Год — 4800 Stars/год</b> (~3360 руб, -20%)',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '',
+    '<b>Кредиты</b> (разовая покупка)',
+    '  50 Stars = 10 кредитов (2 письма)',
+    '  200 Stars = 50 кредитов (10 писем)',
+    `  Твои кредиты: ${user.credits}`,
+    '',
+    '<i>Оплата через Telegram Stars скоро!</i>',
+  ].join('\n');
+
+  await ctx.reply(text, { parse_mode: 'HTML', reply_markup: mainKeyboard });
 }
 
 // --- Bot setup ---
@@ -245,6 +318,10 @@ export function createBot(): Bot {
     await handleEditFieldCallback(ctx, field);
   });
 
+  // --- /subscribe ---
+
+  bot.command('subscribe', requireOnboarded, handleSubscribe);
+
   // --- Slash commands ---
 
   bot.command('digest', requireOnboarded, handleDigest);
@@ -286,9 +363,19 @@ export function createBot(): Bot {
       await ctx.answerCallbackQuery();
       try { await ctx.deleteMessage(); } catch { /* ok */ }
 
+      // Free plan: block pagination beyond limit
+      const pro = isProUser(user);
+      if (!pro) {
+        const maxDigest = CONFIG.freemium.free.digestPageSize;
+        if (id >= maxDigest) {
+          await ctx.reply(paywallText('digest', user), { parse_mode: 'HTML' });
+          return;
+        }
+      }
+
       const { vacancies, total } = getUserVacancies(user.id, id, DIGEST_PAGE_SIZE);
       if (vacancies.length === 0) {
-        await ctx.reply('\u0411\u043E\u043B\u044C\u0448\u0435 \u043D\u0435\u0442 \u0440\u0435\u043B\u0435\u0432\u0430\u043D\u0442\u043D\u044B\u0445 \u0432\u0430\u043A\u0430\u043D\u0441\u0438\u0439.', { reply_markup: mainKeyboard });
+        await ctx.reply('Больше нет релевантных вакансий.', { reply_markup: mainKeyboard });
         return;
       }
 
@@ -301,8 +388,8 @@ export function createBot(): Bot {
       const shown = id + vacancies.length;
       if (shown < total) {
         await ctx.reply(
-          `\u041F\u043E\u043A\u0430\u0437\u0430\u043D\u043E ${shown} \u0438\u0437 ${total}`,
-          { reply_markup: new InlineKeyboard().text('\u041F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0435\u0449\u0451', `more:${shown}`) },
+          `Показано ${shown} из ${total}`,
+          { reply_markup: new InlineKeyboard().text('Показать ещё', `more:${shown}`) },
         );
       }
       return;
@@ -346,6 +433,17 @@ export function createBot(): Bot {
       case 'cover': {
         await ctx.answerCallbackQuery();
 
+        // Check if cached — no limit needed
+        const cached = getCoverLetter(user.id, id);
+        if (!cached) {
+          // Freemium gate: check cover letter limit
+          const canGenerate = checkCoverLetterLimit(user);
+          if (!canGenerate) {
+            await ctx.reply(paywallText('letters', user), { parse_mode: 'HTML' });
+            return;
+          }
+        }
+
         try {
           await ctx.editMessageText(formatVacancyLoading(vacancy), {
             parse_mode: 'HTML',
@@ -354,7 +452,10 @@ export function createBot(): Bot {
         } catch { /* ok */ }
 
         try {
-          const letter = getCoverLetter(user.id, id) ?? await generateCoverLetter(user, vacancy);
+          const letter = cached ?? await generateCoverLetter(user, vacancy);
+          if (!cached) {
+            consumeCoverLetterQuota(user);
+          }
           await ctx.editMessageText(formatVacancyWithLetter(vacancy, letter), {
             parse_mode: 'HTML',
             reply_markup: coverLetterButtons(id),
@@ -377,6 +478,13 @@ export function createBot(): Bot {
       case 'restyle': {
         await ctx.answerCallbackQuery();
 
+        // Freemium gate: restyle always counts as a new generation
+        const canRestyle = checkCoverLetterLimit(user);
+        if (!canRestyle) {
+          await ctx.reply(paywallText('letters', user), { parse_mode: 'HTML' });
+          return;
+        }
+
         try {
           await ctx.editMessageText(formatVacancyLoading(vacancy, '\u0413\u0435\u043D\u0435\u0440\u0438\u0440\u0443\u044E \u0434\u0440\u0443\u0433\u043E\u0439 \u0432\u0430\u0440\u0438\u0430\u043D\u0442...'), {
             parse_mode: 'HTML',
@@ -386,6 +494,7 @@ export function createBot(): Bot {
 
         try {
           const letter = await generateCoverLetter(user, vacancy, true);
+          consumeCoverLetterQuota(user);
           await ctx.editMessageText(formatVacancyWithLetter(vacancy, letter), {
             parse_mode: 'HTML',
             reply_markup: coverLetterButtons(id),
@@ -427,6 +536,56 @@ async function sendVacancyCards(ctx: Context, vacancies: ScoredVacancy[]): Promi
       link_preview_options: { is_disabled: true },
     });
   }
+}
+
+// --- Freemium helpers ---
+
+function checkCoverLetterLimit(user: UserProfile): boolean {
+  if (isProUser(user)) return true;
+  // Credits can be used even on free plan
+  if (user.credits >= CONFIG.freemium.creditsPerLetter) return true;
+  return user.lettersUsed < CONFIG.freemium.free.coverLetters;
+}
+
+/** Deduct quota after successful generation */
+function consumeCoverLetterQuota(user: UserProfile): void {
+  if (isProUser(user)) return;
+  // Try credits first, then free quota
+  if (user.lettersUsed >= CONFIG.freemium.free.coverLetters) {
+    useCredits(user.id, CONFIG.freemium.creditsPerLetter);
+  } else {
+    incrementLettersUsed(user.id);
+  }
+}
+
+function paywallText(reason: 'letters' | 'digest', user: UserProfile): string {
+  const remaining = Math.max(0, CONFIG.freemium.free.coverLetters - user.lettersUsed);
+
+  if (reason === 'letters') {
+    if (user.credits >= CONFIG.freemium.creditsPerLetter) {
+      // Should not happen — checkCoverLetterLimit would pass — but just in case
+      return '';
+    }
+    return [
+      '<b>Лимит бесплатных писем исчерпан</b>',
+      '',
+      `Использовано: ${user.lettersUsed} из ${CONFIG.freemium.free.coverLetters}`,
+      '',
+      '<b>Pro</b> — безлимит писем, полный дайджест, push-алерты.',
+      'Или купи кредиты для разовых генераций.',
+      '',
+      '/subscribe — посмотреть тарифы',
+    ].join('\n');
+  }
+
+  // digest
+  return [
+    `<b>Показано ${CONFIG.freemium.free.digestPageSize} лучших вакансий</b>`,
+    '',
+    'Полный дайджест без ограничений — в <b>Pro</b>.',
+    '',
+    '/subscribe — посмотреть тарифы',
+  ].join('\n');
 }
 
 function formatSalaryProfile(user: UserProfile): string {
