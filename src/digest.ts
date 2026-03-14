@@ -44,19 +44,21 @@ export function formatVacancyCard(v: ScoredVacancy): string {
 }
 
 /** Detailed vacancy view */
-export function formatVacancyDetail(v: ScoredVacancy): string {
-  const skills = v.skills.length > 0 ? v.skills.join(', ') : '\u043D\u0435 \u0443\u043A\u0430\u0437\u0430\u043D\u044B';
+export function formatVacancyDetail(v: ScoredVacancy, prefix = ''): string {
+  const skills = v.skills.length > 0 ? v.skills.join(', ') : 'не указаны';
+  const formatLabel = v.format + (v.city ? ' · ' + v.city : '');
 
   return [
-    `${scoreEmoji(v.score)} <b>${escapeHtml(v.title)}</b>`,
+    `${prefix}${scoreEmoji(v.score)} <b>${escapeHtml(v.title)}</b>`,
     `${escapeHtml(v.company)}`,
     '',
-    `\u0417\u0430\u0440\u043F\u043B\u0430\u0442\u0430: ${formatSalary(v)}`,
-    `\u0424\u043E\u0440\u043C\u0430\u0442: ${formatFormat(v)} ${v.format}${v.city ? ' \u00B7 ' + escapeHtml(v.city) : ''}`,
-    `\u0421\u043A\u043E\u0440: ${v.score}/100 (\u043D\u0430\u0432\u044B\u043A\u0438 ${v.scoreSkills}, \u0437\u043F ${v.scoreSalary}, \u0444\u043E\u0440\u043C\u0430\u0442 ${v.scoreFormat})`,
-    `\u041D\u0430\u0432\u044B\u043A\u0438: ${escapeHtml(skills)}`,
-    `\u0418\u0441\u0442\u043E\u0447\u043D\u0438\u043A: ${v.source}`,
-    `<a href="${v.url}">\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u0432\u0430\u043A\u0430\u043D\u0441\u0438\u044E</a>`,
+    `<code>Зарплата: ${formatSalary(v)}`,
+    `Формат:   ${formatFormat(v)} ${escapeHtml(formatLabel)}`,
+    `Скор:     ${v.score}/100 (навыки ${v.scoreSkills}, зп ${v.scoreSalary}, формат ${v.scoreFormat})</code>`,
+    '',
+    `Навыки: <code>${escapeHtml(skills)}</code>`,
+    `Источник: ${v.source}`,
+    `<a href="${v.url}">Открыть вакансию</a>`,
   ].join('\n');
 }
 

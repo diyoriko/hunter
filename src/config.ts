@@ -11,22 +11,25 @@ const parsed = envSchema.parse(process.env);
 
 export const CONFIG = {
   /** Bot version — bump on each deploy */
-  version: '0.4.0',
+  version: '0.5.0',
 
   /** Admin Telegram ID for deploy notifications */
   adminTelegramId: parsed.ADMIN_TELEGRAM_ID,
 
   /** Human-readable deploy notes (non-technical!) */
   deployNotes: [
-    '✅ <b>Оплата через Telegram Stars</b>',
-    '      Pro подписка: 700 Stars/мес или 6720/год (-20%)',
-    '      Кредиты: 100 Stars = 3 письма, 300 Stars = 10 писем',
+    '\u2705 <b>Cover letter resilience</b>',
+    '      \u0422\u0430\u0439\u043C\u0430\u0443\u0442 15\u0441 + fallback \u0441 \u043A\u043D\u043E\u043F\u043A\u043E\u0439 \u00AB\u041F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u044C\u00BB',
     '',
-    '✅ <b>Deploy-отчёт</b>',
-    '      После каждого обновления — метрики: юзеры, вакансии, средний скор',
+    '\u2705 <b>UX polish</b>',
+    '      \u041F\u0430\u0433\u0438\u043D\u0430\u0446\u0438\u044F 1\u201315 \u0438\u0437 N, \u043F\u0443\u0441\u0442\u043E\u0439 \u0434\u0430\u0439\u0434\u0436\u0435\u0441\u0442 \u2192 \u0441\u043E\u0432\u0435\u0442, \u041E\u0442\u043A\u043B\u0438\u043A\u043D\u0443\u043B\u0441\u044F \u2192 \u2705',
+    '      \u041E\u0447\u0438\u0441\u0442\u0438\u0442\u044C \u0447\u0430\u0442 \u0441 \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u0435\u043C, \u043C\u043E\u043D\u043E\u0448\u0438\u0440\u0438\u043D\u043D\u044B\u0435 \u043F\u043E\u043B\u044F',
     '',
-    '✅ <b>Напоминание о продлении</b>',
-    '      За 3 дня до окончания Pro — push-напоминание',
+    '\u2705 <b>\u0417\u0430\u0449\u0438\u0442\u0430</b>',
+    '      \u0412\u0430\u043B\u0438\u0434\u0430\u0446\u0438\u044F \u0432\u0432\u043E\u0434\u0430, salary parser (300k-500k), random delays \u0432 \u0441\u043A\u0440\u0435\u0439\u043F\u0435\u0440\u0430\u0445',
+    '',
+    '\u2705 <b>\u0421\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0430</b>',
+    '      /adminstats, \u043F\u043E\u043B\u0438\u0440\u043E\u0432\u043A\u0430 \u044D\u043A\u0440\u0430\u043D\u0430, \u043F\u0440\u043E\u0444\u0438\u043B\u044C \u0441 \u043F\u043E\u044F\u0441\u043D\u0435\u043D\u0438\u044F\u043C\u0438',
   ],
 
   telegramBotToken: parsed.TELEGRAM_BOT_TOKEN,

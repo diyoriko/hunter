@@ -16,6 +16,7 @@ export function getDb(): Database.Database {
     db = new Database(CONFIG.dbPath);
     db.pragma('journal_mode = WAL');
     db.pragma('foreign_keys = ON');
+    db.pragma('busy_timeout = 5000');
     initSchema();
   }
   return db;

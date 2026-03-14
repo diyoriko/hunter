@@ -23,12 +23,18 @@ const STEPS: Record<OnboardingState, {
   awaiting_name: {
     question: 'Как тебя зовут?',
     next: 'awaiting_title',
-    parse: (text) => ({ name: text.trim() }),
+    parse: (text) => {
+      const name = text.trim().slice(0, 100);
+      return name.length > 0 ? { name } : null;
+    },
   },
   awaiting_title: {
     question: 'Кем работаешь? Например: Product Designer, Frontend Developer, Маркетолог',
     next: 'awaiting_experience',
-    parse: (text) => ({ title: text.trim() }),
+    parse: (text) => {
+      const title = text.trim().slice(0, 200);
+      return title.length > 0 ? { title } : null;
+    },
   },
   awaiting_experience: {
     question: 'Сколько лет опыта? (число)',
@@ -42,7 +48,7 @@ const STEPS: Record<OnboardingState, {
     question: 'Перечисли ключевые навыки через запятую, от самого важного к менее важному.\nНапример: Figma, UI/UX, брендинг, HTML/CSS\n\nПервые навыки получат больший вес при скоринге.',
     next: 'awaiting_salary',
     parse: (text) => {
-      const skills = text.split(',').map(s => s.trim()).filter(Boolean);
+      const skills = text.slice(0, 500).split(',').map(s => s.trim()).filter(Boolean).slice(0, 20);
       const skillWeights: SkillWeight[] = skills.map((name, i) => ({
         name,
         weight: skills.length === 1 ? 1.0 : parseFloat((1.0 - (i / (skills.length - 1)) * 0.5).toFixed(2)),
@@ -51,20 +57,24 @@ const STEPS: Record<OnboardingState, {
     },
   },
   awaiting_salary: {
-    question: 'Желаемая зарплата? Формат: 300000-500000 (или просто число)',
+    question: 'Желаемая зарплата? Формат: 300000-500000 (или 300k-500k)',
     next: 'awaiting_format',
     parse: (text) => {
       const trimmed = text.trim().toLowerCase();
       if (trimmed === 'пропустить' || trimmed === 'skip' || trimmed === '-') {
         return { salaryMin: null, salaryMax: null };
       }
-      const match = trimmed.replace(/\s/g, '').match(/^(\d+)[-–](\d+)$/);
+      const cleaned = trimmed.replace(/[\s,]/g, '');
+      const match = cleaned.match(/^(\d+)(k?)[-–](\d+)(k?)$/);
       if (match) {
-        return { salaryMin: parseInt(match[1], 10), salaryMax: parseInt(match[2], 10) };
+        const min = parseInt(match[1], 10) * (match[2] ? 1000 : 1);
+        const max = parseInt(match[3], 10) * (match[4] ? 1000 : 1);
+        return { salaryMin: min, salaryMax: max };
       }
-      const single = parseInt(trimmed.replace(/\s/g, ''), 10);
-      if (!isNaN(single)) {
-        return { salaryMin: single, salaryMax: null };
+      const singleMatch = cleaned.match(/^(\d+)(k?)$/);
+      if (singleMatch) {
+        const val = parseInt(singleMatch[1], 10) * (singleMatch[2] ? 1000 : 1);
+        return { salaryMin: val, salaryMax: null };
       }
       return null;
     },
@@ -124,14 +134,14 @@ const STEPS: Record<OnboardingState, {
     },
   },
   awaiting_about: {
-    question: 'Расскажи кратко о своём опыте — где работал, что делал. Это будет использоваться для генерации сопроводительных писем.',
+    question: 'Расскажи кратко о своём опыте — где работал, что делал (до 2000 символов). Это будет использоваться для генерации сопроводительных писем.',
     next: 'complete',
     parse: (text) => {
       const trimmed = text.trim().toLowerCase();
       if (trimmed === 'пропустить' || trimmed === 'skip' || trimmed === '-') {
         return { about: null };
       }
-      return { about: text.trim() };
+      return { about: text.trim().slice(0, 2000) };
     },
   },
   complete: {
@@ -245,9 +255,9 @@ export async function showEditMenu(ctx: Context): Promise<void> {
   const keys = Object.keys(EDIT_FIELDS);
   for (let i = 0; i < keys.length; i++) {
     kb.text(EDIT_FIELDS[keys[i]].label, `edit:${keys[i]}`);
-    if (i % 3 === 2) kb.row();
+    if (i % 2 === 1) kb.row();
   }
-  if (keys.length % 3 !== 0) kb.row();
+  if (keys.length % 2 !== 0) kb.row();
   kb.text('❌ Закрыть', 'edit:cancel');
 
   await ctx.reply(lines.join('\n'), { parse_mode: 'HTML', reply_markup: kb });

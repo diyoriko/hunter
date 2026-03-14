@@ -1,7 +1,7 @@
 import { Bot, Context, Keyboard, InlineKeyboard } from 'grammy';
 import { CONFIG } from './config';
 import { logger } from './logger';
-import { getOrCreateUser, getUserVacancies, getVacancyById, updateUserVacancyStatus, updateUser, getUserStats, markVacanciesNotified, isProUser, incrementLettersUsed, useCredits, activatePro, addCredits, savePayment } from './db';
+import { getOrCreateUser, getUserVacancies, getVacancyById, updateUserVacancyStatus, updateUser, getUserStats, markVacanciesNotified, isProUser, incrementLettersUsed, useCredits, activatePro, addCredits, savePayment, getGlobalStats } from './db';
 import { handleOnboarding, handleFormatCallback, handleDomainCallback, handleOnboardingNavCallback, askQuestion, showEditMenu, editingSessions, handleEditFieldCallback } from './onboarding';
 import { getCoverLetter, generateCoverLetter } from './cover-letter';
 import {
@@ -12,8 +12,8 @@ import {
 import type { UserProfile, ScoredVacancy } from './types';
 
 export const mainKeyboard = new Keyboard()
-  .text('📋 Дайджест').text('👤 Профиль').row()
-  .text('📊 Статистика').text('🧹 Очистить')
+  .text('\u{1F4CB} \u0414\u0430\u0439\u0434\u0436\u0435\u0441\u0442').text('\u{1F464} \u041F\u0440\u043E\u0444\u0438\u043B\u044C').row()
+  .text('\u{1F4CA} \u0421\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0430').text('\u{1F9F9} \u041E\u0447\u0438\u0441\u0442\u0438\u0442\u044C \u0447\u0430\u0442')
   .resized()
   .persistent();
 
@@ -47,8 +47,17 @@ async function handleDigest(ctx: Context): Promise<void> {
 
   if (vacancies.length === 0) {
     await ctx.reply(
-      'Нет релевантных вакансий. Новые появятся после автоматического поиска.',
-      { reply_markup: mainKeyboard },
+      [
+        'Нет релевантных вакансий.',
+        '',
+        'Попробуй расширить профиль:',
+        '— добавь больше навыков',
+        '— расширь зарплатную вилку',
+        '— смени формат на «любой»',
+        '',
+        'Новые вакансии появятся после автоматического поиска.',
+      ].join('\n'),
+      { reply_markup: new InlineKeyboard().text('✏️ Редактировать профиль', 'edit_profile') },
     );
     return;
   }
@@ -76,7 +85,7 @@ async function handleDigest(ctx: Context): Promise<void> {
 
   if (total > displayVacancies.length) {
     await ctx.reply(
-      `Показано ${displayVacancies.length} из ${total}`,
+      `Показано 1\u2013${displayVacancies.length} из ${total}`,
       { reply_markup: new InlineKeyboard().text('Показать ещё', `more:${displayVacancies.length}`) },
     );
   }
@@ -109,7 +118,9 @@ async function handleProfile(ctx: Context): Promise<void> {
     `🔍 <b>Запросы:</b> ${escapeHtml(queries)}`,
     '',
     `🚩 <b>Red flags:</b> ${escapeHtml(redFlags)}`,
+    user.redFlags.length > 0 ? '<i>  (скор вакансий с этими словами /2)</i>' : '',
     `🚫 <b>Блеклист:</b> ${escapeHtml(blacklist)}`,
+    user.companyBlacklist.length > 0 ? '<i>  (скор вакансий этих компаний = 0)</i>' : '',
     '',
     user.portfolio ? `🔗 <b>Портфолио:</b> ${escapeHtml(user.portfolio)}` : '',
   ].filter(Boolean).join('\n');
@@ -143,33 +154,31 @@ async function handleStats(ctx: Context): Promise<void> {
     : `План: <b>Free</b> — писем осталось: ${remainingLetters}/${CONFIG.freemium.free.coverLetters}`;
 
   const text = [
-    '<b>📊 Статистика</b>',
+    '<b>Статистика</b>',
     '',
     planLine,
     user.credits > 0 ? `Кредитов: ${user.credits}` : '',
     '',
-    `📋 Всего вакансий: ${s.total}`,
-    `🎯 Релевантных (40+): ${s.relevant}`,
-    `✅ Откликнулся: ${s.applied}`,
-    `❌ Скрыто: ${s.rejected}`,
-    `✉️ Писем сгенерировано: ${s.coverLetters}`,
-    `⚡ Средний скор: ${s.avgScore}/100`,
+    `<code>Вакансий:     ${s.total}`,
+    `Релевантных:  ${s.relevant} (скор 40+)`,
+    `Откликнулся:  ${s.applied}`,
+    `Скрыто:       ${s.rejected}`,
+    `Писем:        ${s.coverLetters}`,
+    `Средний скор: ${s.avgScore}/100</code>`,
     '',
-    '<b>🌐 По источникам:</b>',
+    '<b>По источникам:</b>',
     sourceLines || '  нет данных',
     '',
     '━━━━━━━━━━━━━━━━━━━━',
     '',
-    '<b>🧠 Как работает скор</b>',
-    'Каждая вакансия оценивается от 0 до 100:',
+    '<b>Как работает скор</b>',
     '',
-    '🛠 <b>Навыки (40%)</b> — взвешенное совпадение навыков. Первые навыки в списке важнее.',
-    '💰 <b>Зарплата (25%)</b> — попадание вилки в твой диапазон.',
-    '🏠 <b>Формат (20%)</b> — удалёнка, гибрид, офис.',
-    '🏢 <b>Отрасль (15%)</b> — совпадение с выбранными доменами.',
+    '<code>Навыки:  40% — совпадение навыков (первые важнее)',
+    'Зарплата: 25% — попадание вилки в диапазон',
+    'Формат:  20% — удалёнка, гибрид, офис',
+    'Отрасль: 15% — совпадение с доменами</code>',
     '',
-    '⚠️ <b>Штрафы:</b> red flags = скор /2, блеклист = скор 0.',
-    '',
+    'Red flags = скор /2, блеклист = скор 0.',
     'В дайджест попадают вакансии со скором 40+.',
   ].filter(Boolean).join('\n');
 
@@ -177,20 +186,14 @@ async function handleStats(ctx: Context): Promise<void> {
 }
 
 async function handleClear(ctx: Context): Promise<void> {
-  const chatId = ctx.chat!.id;
-  const currentMsgId = ctx.message!.message_id;
-  let deleted = 0;
+  const confirmButton = new InlineKeyboard()
+    .text('\u2705 \u0414\u0430, \u043E\u0447\u0438\u0441\u0442\u0438\u0442\u044C', 'clear_confirm')
+    .text('\u274C \u041E\u0442\u043C\u0435\u043D\u0430', 'clear_cancel');
 
-  for (let id = currentMsgId; id > currentMsgId - 500 && id > 0; id--) {
-    try {
-      await ctx.api.deleteMessage(chatId, id);
-      deleted++;
-    } catch {
-      // Message doesn't exist or too old — skip
-    }
-  }
-
-  await ctx.reply(`🧹 Удалено ${deleted} сообщений`, { reply_markup: mainKeyboard });
+  await ctx.reply(
+    '\u{1F9F9} \u041E\u0447\u0438\u0441\u0442\u0438\u0442\u044C \u0447\u0430\u0442?\n\u0411\u0443\u0434\u0443\u0442 \u0443\u0434\u0430\u043B\u0435\u043D\u044B \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0435 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F \u0432 \u0447\u0430\u0442\u0435.',
+    { reply_markup: confirmButton },
+  );
 }
 
 async function handleSubscribe(ctx: Context): Promise<void> {
@@ -273,9 +276,15 @@ export function createBot(): Bot {
     }
 
     if (user.onboardingState === 'complete') {
+      const quickButtons = new InlineKeyboard()
+        .text('\u{1F4CB} \u0414\u0430\u0439\u0434\u0436\u0435\u0441\u0442', 'quick:digest')
+        .text('\u{1F464} \u041F\u0440\u043E\u0444\u0438\u043B\u044C', 'quick:profile')
+        .row()
+        .text('\u{1F4CA} \u0421\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0430', 'quick:stats')
+        .text('\u2B50 \u041F\u043E\u0434\u043F\u0438\u0441\u043A\u0430', 'quick:subscribe');
       await ctx.reply(
-        `С возвращением, ${escapeHtml(user.name ?? '👋')}!\nИспользуй кнопки внизу.`,
-        { parse_mode: 'HTML', reply_markup: mainKeyboard },
+        `\u0421 \u0432\u043E\u0437\u0432\u0440\u0430\u0449\u0435\u043D\u0438\u0435\u043C, ${escapeHtml(user.name ?? '\u{1F44B}')}!`,
+        { parse_mode: 'HTML', reply_markup: quickButtons },
       );
       return;
     }
@@ -317,7 +326,7 @@ export function createBot(): Bot {
     if (field === 'cancel') {
       editingSessions.delete(ctx.from.id);
       await ctx.answerCallbackQuery();
-      try { await ctx.deleteMessage(); } catch { /* ok */ }
+      try { await ctx.deleteMessage(); } catch (err) { logger.warn('bot', 'Failed to delete edit menu', { error: String(err) }); }
       return;
     }
     await handleEditFieldCallback(ctx, field);
@@ -454,19 +463,86 @@ export function createBot(): Bot {
   bot.command('profile', requireOnboarded, handleProfile);
   bot.command('stats', requireOnboarded, handleStats);
 
+  // --- Admin stats ---
+
+  bot.command('adminstats', async (ctx) => {
+    if (!ctx.from || ctx.from.id !== CONFIG.adminTelegramId) {
+      return;
+    }
+
+    const g = getGlobalStats();
+    const sourceLines = Object.entries(g.vacanciesBySource)
+      .map(([source, count]) => `  ${source}: ${count}`)
+      .join('\n');
+
+    const text = [
+      '<b>Admin Stats</b>',
+      '',
+      `<code>MAU:          ${g.mau}`,
+      `Total users:  ${g.totalUsers}`,
+      `Pro users:    ${g.proUsers}`,
+      `Vacancies:    ${g.totalVacancies}`,
+      `Cover letters: ${g.totalCoverLetters}`,
+      `Avg score:    ${g.avgScore}/100</code>`,
+      '',
+      '<b>By source:</b>',
+      sourceLines || '  no data',
+    ].join('\n');
+
+    await ctx.reply(text, { parse_mode: 'HTML' });
+  });
+
   // --- Button handlers ---
 
   bot.hears(/\u0414\u0430\u0439\u0434\u0436\u0435\u0441\u0442/, requireOnboarded, handleDigest);
   bot.hears(/\u041F\u0440\u043E\u0444\u0438\u043B\u044C/, requireOnboarded, handleProfile);
   bot.hears(/\u0421\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0430/, requireOnboarded, handleStats);
-  bot.hears(/\u041E\u0447\u0438\u0441\u0442\u0438\u0442\u044C/, requireOnboarded, handleClear);
+  bot.hears(/\u041E\u0447\u0438\u0441\u0442\u0438\u0442\u044C(\s\u0447\u0430\u0442)?/, requireOnboarded, handleClear);
   bot.command('clear', requireOnboarded, handleClear);
+
+  // --- Quick action buttons (return user) ---
+
+  bot.callbackQuery(/^quick:(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const action = ctx.match[1];
+    switch (action) {
+      case 'digest': return handleDigest(ctx);
+      case 'profile': return handleProfile(ctx);
+      case 'stats': return handleStats(ctx);
+      case 'subscribe': return handleSubscribe(ctx);
+    }
+  });
+
+  // --- Clear chat confirmation ---
+
+  bot.callbackQuery('clear_confirm', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const chatId = ctx.chat!.id;
+    const currentMsgId = ctx.callbackQuery.message?.message_id ?? 0;
+    let deleted = 0;
+
+    for (let id = currentMsgId; id > currentMsgId - 500 && id > 0; id--) {
+      try {
+        await ctx.api.deleteMessage(chatId, id);
+        deleted++;
+      } catch {
+        // Message doesn't exist or too old — skip
+      }
+    }
+
+    await ctx.reply(`\u{1F9F9} \u0423\u0434\u0430\u043B\u0435\u043D\u043E ${deleted} \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439`, { reply_markup: mainKeyboard });
+  });
+
+  bot.callbackQuery('clear_cancel', async (ctx) => {
+    await ctx.answerCallbackQuery({ text: '\u041E\u0442\u043C\u0435\u043D\u0435\u043D\u043E' });
+    try { await ctx.deleteMessage(); } catch (err) { logger.warn('bot', 'Telegram API call failed', { error: String(err) }); }
+  });
 
   // --- Inline keyboard callbacks ---
 
   bot.on('callback_query:data', async (ctx) => {
     const data = ctx.callbackQuery.data;
-    if (data.startsWith('format:') || data.startsWith('domain:') || data.startsWith('onb:') || data.startsWith('edit:') || data.startsWith('buy:') || data === 'edit_profile') return;
+    if (data.startsWith('format:') || data.startsWith('domain:') || data.startsWith('onb:') || data.startsWith('edit:') || data.startsWith('buy:') || data.startsWith('quick:') || data === 'edit_profile' || data === 'clear_confirm' || data === 'clear_cancel') return;
 
     const [action, idStr] = data.split(':');
     const id = parseInt(idStr, 10);
@@ -487,7 +563,7 @@ export function createBot(): Bot {
     // Pagination
     if (action === 'more') {
       await ctx.answerCallbackQuery();
-      try { await ctx.deleteMessage(); } catch { /* ok */ }
+      try { await ctx.deleteMessage(); } catch (err) { logger.warn('bot', 'Telegram API call failed', { error: String(err) }); }
 
       // Free plan: block pagination beyond limit
       const pro = isProUser(user);
@@ -514,7 +590,7 @@ export function createBot(): Bot {
       const shown = id + vacancies.length;
       if (shown < total) {
         await ctx.reply(
-          `Показано ${shown} из ${total}`,
+          `Показано ${id + 1}\u2013${shown} из ${total}`,
           { reply_markup: new InlineKeyboard().text('Показать ещё', `more:${shown}`) },
         );
       }
@@ -541,18 +617,21 @@ export function createBot(): Bot {
       case 'reject': {
         updateUserVacancyStatus(user.id, id, 'rejected');
         await ctx.answerCallbackQuery({ text: '\u0421\u043A\u0440\u044B\u0442\u043E' });
-        try { await ctx.deleteMessage(); } catch { /* ok */ }
+        try { await ctx.deleteMessage(); } catch (err) { logger.warn('bot', 'Telegram API call failed', { error: String(err) }); }
         break;
       }
 
       case 'applied': {
         updateUserVacancyStatus(user.id, id, 'applied');
         await ctx.answerCallbackQuery({ text: '\u041E\u0442\u043A\u043B\u0438\u043A\u043D\u0443\u043B\u0441\u044F' });
-        try { await ctx.deleteMessage(); } catch { /* ok */ }
-        await ctx.reply(
-          `\u041E\u0442\u043A\u043B\u0438\u043A\u043D\u0443\u043B\u0441\u044F: <b>${escapeHtml(vacancy.title)}</b> \u2014 ${escapeHtml(vacancy.company)}`,
-          { parse_mode: 'HTML', reply_markup: mainKeyboard },
-        );
+        try {
+          await ctx.editMessageText(
+            formatVacancyDetail(vacancy, '\u2705 '),
+            { parse_mode: 'HTML', link_preview_options: { is_disabled: true } },
+          );
+        } catch {
+          logger.warn('bot', 'Failed to edit applied message', { vacancyId: id });
+        }
         break;
       }
 
@@ -575,10 +654,25 @@ export function createBot(): Bot {
             parse_mode: 'HTML',
             link_preview_options: { is_disabled: true },
           });
-        } catch { /* ok */ }
+        } catch (err) { logger.warn('bot', 'Telegram API call failed', { error: String(err) }); }
 
         try {
+          // Show "taking longer" after 15s
+          let slowTimer: ReturnType<typeof setTimeout> | null = null;
+          if (!cached) {
+            slowTimer = setTimeout(async () => {
+              try {
+                await ctx.editMessageText(
+                  formatVacancyLoading(vacancy, '\u0413\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u044F \u0437\u0430\u043D\u0438\u043C\u0430\u0435\u0442 \u0434\u043E\u043B\u044C\u0448\u0435 \u043E\u0431\u044B\u0447\u043D\u043E\u0433\u043E...'),
+                  { parse_mode: 'HTML', link_preview_options: { is_disabled: true } },
+                );
+              } catch (err) { logger.warn('bot', 'Telegram API call failed', { error: String(err) }); }
+            }, 15_000);
+          }
+
           const letter = cached ?? await generateCoverLetter(user, vacancy);
+          if (slowTimer) clearTimeout(slowTimer);
+
           if (!cached) {
             consumeCoverLetterQuota(user);
           }
@@ -589,14 +683,17 @@ export function createBot(): Bot {
           });
         } catch (err) {
           logger.error('bot', 'Cover letter failed', { error: String(err) });
+          const retryButtons = new InlineKeyboard()
+            .text('\u{1F504} \u041F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u044C', `cover:${id}`)
+            .text('\u25C0\uFE0F \u041D\u0430\u0437\u0430\u0434', `view:${id}`);
           try {
-            await ctx.editMessageText(formatVacancyDetail(vacancy), {
-              parse_mode: 'HTML',
-              reply_markup: vacancyButtons(id),
-              link_preview_options: { is_disabled: true },
-            });
-          } catch { /* ok */ }
-          await ctx.reply(`\u041E\u0448\u0438\u0431\u043A\u0430 \u0433\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u0438: ${String(err)}`);
+            await ctx.editMessageText(
+              formatVacancyDetail(vacancy, '\u26A0\uFE0F '),
+              { parse_mode: 'HTML', reply_markup: retryButtons, link_preview_options: { is_disabled: true } },
+            );
+          } catch {
+            logger.warn('bot', 'Failed to show cover letter error fallback');
+          }
         }
         break;
       }
@@ -616,10 +713,21 @@ export function createBot(): Bot {
             parse_mode: 'HTML',
             link_preview_options: { is_disabled: true },
           });
-        } catch { /* ok */ }
+        } catch (err) { logger.warn('bot', 'Telegram API call failed', { error: String(err) }); }
 
         try {
+          // Show "taking longer" after 15s
+          const slowTimer = setTimeout(async () => {
+            try {
+              await ctx.editMessageText(
+                formatVacancyLoading(vacancy, '\u0413\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u044F \u0437\u0430\u043D\u0438\u043C\u0430\u0435\u0442 \u0434\u043E\u043B\u044C\u0448\u0435 \u043E\u0431\u044B\u0447\u043D\u043E\u0433\u043E...'),
+                { parse_mode: 'HTML', link_preview_options: { is_disabled: true } },
+              );
+            } catch (err) { logger.warn('bot', 'Telegram API call failed', { error: String(err) }); }
+          }, 15_000);
+
           const letter = await generateCoverLetter(user, vacancy, true);
+          clearTimeout(slowTimer);
           consumeCoverLetterQuota(user);
           await ctx.editMessageText(formatVacancyWithLetter(vacancy, letter), {
             parse_mode: 'HTML',
@@ -628,7 +736,17 @@ export function createBot(): Bot {
           });
         } catch (err) {
           logger.error('bot', 'Restyle failed', { error: String(err) });
-          await ctx.reply(`\u041E\u0448\u0438\u0431\u043A\u0430 \u0433\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u0438: ${String(err)}`);
+          const retryButtons = new InlineKeyboard()
+            .text('\u{1F504} \u041F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u044C', `restyle:${id}`)
+            .text('\u25C0\uFE0F \u041D\u0430\u0437\u0430\u0434', `view:${id}`);
+          try {
+            await ctx.editMessageText(
+              formatVacancyDetail(vacancy, '\u26A0\uFE0F '),
+              { parse_mode: 'HTML', reply_markup: retryButtons, link_preview_options: { is_disabled: true } },
+            );
+          } catch {
+            logger.warn('bot', 'Failed to show restyle error fallback');
+          }
         }
         break;
       }

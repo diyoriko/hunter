@@ -57,8 +57,9 @@ export async function runAllScrapers(): Promise<ScrapeResult[]> {
   // Run scrapers
   const scrapers = [new HhScraper(queries), new HabrScraper(queries)];
 
-  for (const scraper of scrapers) {
-    const result = await runScraper(scraper);
+  for (let i = 0; i < scrapers.length; i++) {
+    if (i > 0) await sleep(2000);
+    const result = await runScraper(scrapers[i]);
     results.push(result);
   }
 
@@ -121,4 +122,8 @@ export function scoreForAllUsers(users?: UserProfile[]): void {
   }
 
   logger.info('runner', `Scored ${scored} user-vacancy pairs (${allUsers.length} users x ${vacancyIds.length} vacancies)`);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(r => setTimeout(r, ms));
 }

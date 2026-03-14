@@ -3,7 +3,7 @@ import type { Vacancy, WorkFormat, ExperienceLevel } from '../types';
 import type { Scraper } from './types';
 
 const BASE_URL = 'https://career.habr.com/api/frontend/vacancies';
-const DELAY_MS = 500;
+function randomDelay(): number { return 1000 + Math.random() * 2000; }
 const MAX_PAGES = 3;
 
 interface HabrVacancy {
@@ -69,7 +69,7 @@ export class HabrScraper implements Scraper {
         logger.error('habr', `Query "${query}" failed`, { error: String(err) });
       }
 
-      await sleep(DELAY_MS);
+      await sleep(randomDelay());
     }
 
     logger.info('habr', `Scrape complete: ${allVacancies.length} vacancies`);
@@ -111,7 +111,7 @@ export class HabrScraper implements Scraper {
 
         if (page >= data.meta.totalPages) break;
         page++;
-        await sleep(DELAY_MS);
+        await sleep(randomDelay());
       } catch (err) {
         logger.error('habr', `Page ${page} failed for "${query}"`, { error: String(err) });
         break;
