@@ -18,6 +18,9 @@ if [ -z "$BOT_TOKEN" ] && [ -f "$PROJECT_DIR/.env" ]; then
 fi
 ADMIN_CHAT_ID="${ADMIN_TELEGRAM_ID:?Set ADMIN_TELEGRAM_ID env var}"
 
+# Bot HTTP URL for proposal API (Railway)
+BOT_URL="${HUNTER_BOT_URL:-https://hunter-production-0b65.up.railway.app}"
+
 # PATH for claude CLI and node (Mac-specific paths added only if they exist)
 if [ -d "$HOME/.nvm/versions/node" ]; then
   NVM_BIN=$(ls -d "$HOME"/.nvm/versions/node/*/bin 2>/dev/null | tail -1)
@@ -37,6 +40,11 @@ if [ -f "$REPORT_FILE" ]; then
   echo "Report for $DATE already exists, skipping"
   exit 0
 fi
+
+# Apply previously approved proposals to BACKLOG.md
+echo "$(date -Iseconds) Checking for approved proposals..."
+bash "$AGENT_DIR/apply-proposals.sh" "$PROJECT_DIR/BACKLOG.md" "$BOT_TOKEN" "$BOT_URL" || \
+  echo "$(date -Iseconds) Proposal fetch failed (non-critical)"
 
 echo "$(date -Iseconds) Starting strategist analysis..."
 
@@ -90,9 +98,9 @@ fi
 echo "$REPORT" > "$REPORT_FILE"
 echo "$(date -Iseconds) Report saved to $REPORT_FILE"
 
-# Extract new tasks from report and add to BACKLOG.md
-echo "$(date -Iseconds) Extracting tasks from report..."
-bash "$AGENT_DIR/extract-tasks.sh" "$REPORT_FILE" "$PROJECT_DIR/BACKLOG.md" || \
+# Extract new tasks from report and send as proposals for approval
+echo "$(date -Iseconds) Extracting tasks and sending proposals..."
+bash "$AGENT_DIR/extract-tasks.sh" "$REPORT_FILE" "$PROJECT_DIR/BACKLOG.md" "$BOT_TOKEN" "$ADMIN_CHAT_ID" "$BOT_URL" || \
   echo "$(date -Iseconds) Task extraction failed (non-critical)"
 
 # Sync backlog.html with updated BACKLOG.md

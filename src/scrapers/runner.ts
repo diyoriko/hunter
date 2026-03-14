@@ -33,8 +33,17 @@ function buildSearchQueries(users: UserProfile[]): string[] {
   return [...queries];
 }
 
+/** Run all scrapers with optional progress callback */
+export async function runScrapersWithProgress(
+  onProgress?: (source: string, step: string) => Promise<void>,
+): Promise<ScrapeResult[]> {
+  return runAllScrapers(onProgress);
+}
+
 /** Run all scrapers, save vacancies, score for all users */
-export async function runAllScrapers(): Promise<ScrapeResult[]> {
+export async function runAllScrapers(
+  onProgress?: (source: string, step: string) => Promise<void>,
+): Promise<ScrapeResult[]> {
   const users = getAllUsers();
 
   if (users.length === 0) {
@@ -59,11 +68,13 @@ export async function runAllScrapers(): Promise<ScrapeResult[]> {
 
   for (let i = 0; i < scrapers.length; i++) {
     if (i > 0) await sleep(2000);
+    if (onProgress) await onProgress(scrapers[i].source, scrapers[i].source);
     const result = await runScraper(scrapers[i]);
     results.push(result);
   }
 
   // Score recent vacancies for all users
+  if (onProgress) await onProgress('scoring', 'scoring');
   scoreForAllUsers(users);
 
   return results;

@@ -475,3 +475,118 @@ describe('expireProPlans', () => {
     expect(updated.plan).toBe('pro');
   });
 });
+
+describe('FK CASCADE', () => {
+  it('user_vacancies table has ON DELETE CASCADE', () => {
+    db.getDb();
+    const row = db.getDb().prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='user_vacancies'").get() as { sql: string };
+    expect(row.sql).toContain('ON DELETE CASCADE');
+  });
+
+  it('cover_letters table has ON DELETE CASCADE', () => {
+    db.getDb();
+    const row = db.getDb().prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='cover_letters'").get() as { sql: string };
+    expect(row.sql).toContain('ON DELETE CASCADE');
+  });
+});
+
+describe('proposals', () => {
+  it('saves and retrieves proposals', () => {
+    const id = db.saveProposal('- [ ] **Test task** — description');
+    expect(id).toBeGreaterThan(0);
+
+    const approved = db.getApprovedProposals();
+    expect(approved).toHaveLength(0); // still pending
+  });
+
+  it('approves a proposal', () => {
+    const id = db.saveProposal('- [ ] **Approved task** — desc');
+    const ok = db.approveProposal(id);
+    expect(ok).toBe(true);
+
+    const approved = db.getApprovedProposals();
+    expect(approved).toHaveLength(1);
+    expect(approved[0].taskText).toBe('- [ ] **Approved task** — desc');
+    expect(approved[0].status).toBe('approved');
+  });
+
+  it('rejects a proposal', () => {
+    const id = db.saveProposal('- [ ] **Rejected task** — desc');
+    const ok = db.rejectProposal(id);
+    expect(ok).toBe(true);
+
+    const approved = db.getApprovedProposals();
+    expect(approved).toHaveLength(0);
+  });
+
+  it('cannot approve already rejected proposal', () => {
+    const id = db.saveProposal('- [ ] **Task** — desc');
+    db.rejectProposal(id);
+    const ok = db.approveProposal(id);
+    expect(ok).toBe(false);
+  });
+
+  it('deletes proposals by ids', () => {
+    const id1 = db.saveProposal('- [ ] **Task 1** — a');
+    const id2 = db.saveProposal('- [ ] **Task 2** — b');
+    db.approveProposal(id1);
+    db.approveProposal(id2);
+
+    const before = db.getApprovedProposals();
+    expect(before).toHaveLength(2);
+
+    db.deleteProposals([id1, id2]);
+    const after = db.getApprovedProposals();
+    expect(after).toHaveLength(0);
+  });
+});
+
+describe('getScoreDistribution', () => {
+  it('returns empty distribution when no data', () => {
+    const dist = db.getScoreDistribution();
+    expect(dist.total).toBe(0);
+    expect(dist.buckets).toEqual([]);
+  });
+
+  it('returns correct distribution with data', () => {
+    const user = db.getOrCreateUser(12345);
+    db.updateUser(12345, { name: 'Test', title: 'Dev', onboardingState: 'complete' });
+
+    // Insert test vacancies
+    const baseVacancy = {
+      source: 'hh.ru' as const,
+      title: 'Test',
+      company: 'Co',
+      salaryFrom: null,
+      salaryTo: null,
+      salaryCurrency: null,
+      format: 'remote' as const,
+      city: null,
+      description: '',
+      skills: [],
+      url: 'https://example.com',
+      publishedAt: new Date(),
+      experience: null,
+    };
+
+    // Insert vacancies with different scores
+    for (let i = 0; i < 5; i++) {
+      const v = { ...baseVacancy, externalId: `test-${i}` };
+      db.upsertVacancy(v);
+    }
+
+    // Assign different scores
+    const scores = [10, 30, 50, 70, 90];
+    const vacancyIds = db.getRecentVacancyIds();
+    for (let i = 0; i < vacancyIds.length && i < scores.length; i++) {
+      db.upsertUserVacancy(user.id, vacancyIds[i], scores[i], 0, 0, 0, 0);
+    }
+
+    const dist = db.getScoreDistribution();
+    expect(dist.total).toBe(5);
+    expect(dist.buckets.length).toBe(5);
+    expect(dist.above40).toBe(3); // 50, 70, 90
+    expect(dist.above60).toBe(2); // 70, 90
+    expect(dist.above80).toBe(1); // 90
+  });
+});

@@ -2,7 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import { Bot } from 'grammy';
 import { createBot } from './bot';
-import { getDb, getKV, setKV, getGlobalStats } from './db';
+import { getDb, getKV, setKV, getGlobalStats, getApprovedProposals, deleteProposals, saveProposal } from './db';
 import { CONFIG } from './config';
 import { logger } from './logger';
 import { startScheduler, stopScheduler } from './scheduler';
@@ -112,10 +112,57 @@ async function main() {
       return;
     }
 
+    // POST /proposal — save a new proposal (auth required)
+    if (req.url === '/proposal' && req.method === 'POST') {
+      const token = req.headers['x-admin-token'];
+      if (token !== CONFIG.telegramBotToken) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'unauthorized' }));
+        return;
+      }
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const { task_text } = JSON.parse(body);
+          if (!task_text) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'task_text required' }));
+            return;
+          }
+          const id = saveProposal(task_text);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ id }));
+        } catch (err) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'invalid JSON' }));
+        }
+      });
+      return;
+    }
+
+    // GET /proposals — fetch approved proposals and delete them (auth required)
+    if (req.url === '/proposals' && req.method === 'GET') {
+      const token = req.headers['x-admin-token'];
+      if (token !== CONFIG.telegramBotToken) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'unauthorized' }));
+        return;
+      }
+      const proposals = getApprovedProposals();
+      // Delete fetched proposals so they're only consumed once
+      if (proposals.length > 0) {
+        deleteProposals(proposals.map(p => p.id));
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ proposals }));
+      return;
+    }
+
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'not found' }));
   }).listen(port, () => {
-    logger.info('main', `HTTP server on :${port} — /, /backup, /stats`);
+    logger.info('main', `HTTP server on :${port} — /, /backup, /stats, /proposals`);
   });
 
   // Graceful shutdown — stop polling before Railway kills the process
