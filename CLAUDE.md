@@ -127,7 +127,7 @@ ADMIN_TELEGRAM_ID=...     # Owner Telegram ID for deploy notifications & seed
 - `npm run typecheck` + `npm test` перед каждым деплоем
 - Pre-commit hook: `tsc --noEmit` (настроен через `.githooks/`)
 - CI: GitHub Actions `ci.yml` — typecheck + tests на каждый push/PR
-- Claude Code Review: `claude-review.yml` — автоматический ревью PR (нужен `ANTHROPIC_API_KEY`)
+- CodeRabbit: автоматический ревью PR → замечания попадают в `BACKLOG.md` через `coderabbit-to-backlog.yml`
 - Coverage: `npm run test:coverage` — отчёт покрытия (@vitest/coverage-v8)
 - Graceful shutdown: SIGTERM → stopScheduler + bot.stop
 - Логи: structured JSON via logger.ts
