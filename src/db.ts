@@ -502,6 +502,55 @@ export function expireProPlans(): number {
   return result.changes;
 }
 
+// --- Global Stats ---
+
+export interface GlobalStats {
+  totalUsers: number;
+  proUsers: number;
+  totalVacancies: number;
+  vacanciesBySource: Record<string, number>;
+  totalCoverLetters: number;
+  avgScore: number;
+  mau: number;
+}
+
+export function getGlobalStats(): GlobalStats {
+  const d = getDb();
+
+  const totalUsers = (d.prepare(
+    "SELECT COUNT(*) as c FROM users WHERE onboarding_state = 'complete'"
+  ).get() as any).c;
+
+  const proUsers = (d.prepare(
+    "SELECT COUNT(*) as c FROM users WHERE plan = 'pro' AND (plan_expires_at IS NULL OR plan_expires_at > datetime('now'))"
+  ).get() as any).c;
+
+  const totalVacancies = (d.prepare(
+    'SELECT COUNT(*) as c FROM vacancies'
+  ).get() as any).c;
+
+  const sourceRows = d.prepare(
+    'SELECT source, COUNT(*) as count FROM vacancies GROUP BY source'
+  ).all() as { source: string; count: number }[];
+  const vacanciesBySource: Record<string, number> = {};
+  for (const r of sourceRows) vacanciesBySource[r.source] = r.count;
+
+  const totalCoverLetters = (d.prepare(
+    'SELECT COUNT(*) as c FROM cover_letters'
+  ).get() as any).c;
+
+  const avgRow = d.prepare(
+    'SELECT AVG(score) as avg FROM user_vacancies WHERE score >= 40'
+  ).get() as any;
+  const avgScore = Math.round(avgRow?.avg ?? 0);
+
+  const mau = (d.prepare(
+    "SELECT COUNT(DISTINCT user_id) as c FROM user_vacancies WHERE created_at >= datetime('now', '-30 days')"
+  ).get() as any).c;
+
+  return { totalUsers, proUsers, totalVacancies, vacanciesBySource, totalCoverLetters, avgScore, mau };
+}
+
 function rowToScoredVacancy(row: any): ScoredVacancy {
   return {
     id: row.id,
