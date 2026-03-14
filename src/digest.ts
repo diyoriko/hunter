@@ -87,12 +87,16 @@ export const DIGEST_PAGE_SIZE = 15;
 
 // --- Shared inline keyboards ---
 
-export function vacancyButtons(id: number): InlineKeyboard {
-  return new InlineKeyboard()
-    .text('📝 Письмо', `cover:${id}`)
-    .text('❌ Скрыть', `reject:${id}`)
-    .row()
-    .text('✅ Откликнулся', `applied:${id}`);
+export function vacancyButtons(id: number, hasSkills = true): InlineKeyboard {
+  const kb = new InlineKeyboard()
+    .text('\u{1F4DD} \u041F\u0438\u0441\u044C\u043C\u043E', `cover:${id}`)
+    .text('\u274C \u0421\u043A\u0440\u044B\u0442\u044C', `reject:${id}`)
+    .row();
+  if (hasSkills) {
+    kb.text('\u{1F6E0}\uFE0F \u0412\u0441\u0435 \u043D\u0430\u0432\u044B\u043A\u0438', `skills:${id}`).row();
+  }
+  kb.text('\u2705 \u041E\u0442\u043A\u043B\u0438\u043A\u043D\u0443\u043B\u0441\u044F', `applied:${id}`);
+  return kb;
 }
 
 export function coverLetterButtons(id: number): InlineKeyboard {

@@ -424,14 +424,38 @@ async function sendComplete(ctx: Context): Promise<void> {
     { parse_mode: 'HTML', reply_markup: mainKeyboard },
   );
 
-  // Auto-scrape for new user
+  // Auto-scrape for new user with progress feedback
   try {
-    const results = await runAllScrapers();
-    const totalNew = results.reduce((sum, r) => sum + r.new, 0);
-    await ctx.reply(
-      `Готово! Найдено ${totalNew} новых вакансий. Нажми <b>Дайджест</b>.`,
-      { parse_mode: 'HTML', reply_markup: mainKeyboard },
+    const progressMsg = await ctx.reply(
+      '\u{1F50D} \u0418\u0449\u0443 \u043D\u0430 hh.ru...',
+      { reply_markup: mainKeyboard },
     );
+
+    const { runScrapersWithProgress } = await import('./scrapers/runner');
+    const results = await runScrapersWithProgress(async (source, step) => {
+      try {
+        const texts: Record<string, string> = {
+          'hh.ru': '\u{1F50D} \u0418\u0449\u0443 \u043D\u0430 hh.ru...',
+          'habr': '\u{1F50D} \u0418\u0449\u0443 \u043D\u0430 Habr...',
+          'scoring': '\u{1F9E0} \u041E\u0446\u0435\u043D\u0438\u0432\u0430\u044E \u0432\u0430\u043A\u0430\u043D\u0441\u0438\u0438...',
+        };
+        await ctx.api.editMessageText(
+          ctx.chat!.id,
+          progressMsg.message_id,
+          texts[step] ?? `\u{1F50D} ${source}...`,
+        );
+      } catch (err) { logger.warn('onboarding', 'Progress edit failed', { error: String(err) }); }
+    });
+
+    const totalNew = results.reduce((sum, r) => sum + r.new, 0);
+    try {
+      await ctx.api.editMessageText(
+        ctx.chat!.id,
+        progressMsg.message_id,
+        `\u2705 \u0413\u043E\u0442\u043E\u0432\u043E! \u041D\u0430\u0439\u0434\u0435\u043D\u043E ${totalNew} \u043D\u043E\u0432\u044B\u0445 \u0432\u0430\u043A\u0430\u043D\u0441\u0438\u0439. \u041D\u0430\u0436\u043C\u0438 <b>\u0414\u0430\u0439\u0434\u0436\u0435\u0441\u0442</b>.`,
+        { parse_mode: 'HTML' },
+      );
+    } catch (err) { logger.warn('onboarding', 'Final progress edit failed', { error: String(err) }); }
   } catch (err) {
     logger.warn('onboarding', 'Auto-scrape after onboarding failed', { error: String(err) });
   }

@@ -1,7 +1,7 @@
 import { Bot, Context, Keyboard, InlineKeyboard } from 'grammy';
 import { CONFIG } from './config';
 import { logger } from './logger';
-import { getOrCreateUser, getUserVacancies, getVacancyById, updateUserVacancyStatus, updateUser, getUserStats, markVacanciesNotified, isProUser, incrementLettersUsed, useCredits, activatePro, addCredits, savePayment, getGlobalStats } from './db';
+import { getOrCreateUser, getUserVacancies, getVacancyById, updateUserVacancyStatus, updateUser, getUserStats, markVacanciesNotified, isProUser, incrementLettersUsed, useCredits, activatePro, addCredits, savePayment, getGlobalStats, getScoreDistribution, saveProposal, approveProposal, rejectProposal } from './db';
 import { handleOnboarding, handleFormatCallback, handleDomainCallback, handleOnboardingNavCallback, askQuestion, showEditMenu, editingSessions, handleEditFieldCallback } from './onboarding';
 import { getCoverLetter, generateCoverLetter } from './cover-letter';
 import {
@@ -492,6 +492,43 @@ export function createBot(): Bot {
     await ctx.reply(text, { parse_mode: 'HTML' });
   });
 
+  // --- Admin score distribution ---
+
+  bot.command('adminscore', async (ctx) => {
+    if (!ctx.from || ctx.from.id !== CONFIG.adminTelegramId) return;
+
+    const dist = getScoreDistribution();
+    if (dist.total === 0) {
+      await ctx.reply('Нет данных по скорам.');
+      return;
+    }
+
+    const barWidth = 20;
+    const maxCount = Math.max(...dist.buckets.map(b => b.count));
+    const bars = dist.buckets.map(b => {
+      const filled = maxCount > 0 ? Math.round((b.count / maxCount) * barWidth) : 0;
+      return `${b.range.padEnd(6)} ${'█'.repeat(filled)}${'░'.repeat(barWidth - filled)} ${b.count}`;
+    }).join('\n');
+
+    const text = [
+      '<b>Score Distribution</b>',
+      '',
+      `<code>${bars}</code>`,
+      '',
+      `<code>Total:   ${dist.total}`,
+      `Median:  ${dist.median}`,
+      `P25:     ${dist.p25}`,
+      `P75:     ${dist.p75}`,
+      `≥40:     ${dist.above40} (${Math.round(dist.above40 / dist.total * 100)}%)`,
+      `≥60:     ${dist.above60} (${Math.round(dist.above60 / dist.total * 100)}%)`,
+      `≥80:     ${dist.above80} (${Math.round(dist.above80 / dist.total * 100)}%)</code>`,
+      '',
+      'Текущий порог дайджеста: 40',
+    ].join('\n');
+
+    await ctx.reply(text, { parse_mode: 'HTML' });
+  });
+
   // --- Button handlers ---
 
   bot.hears(/\u0414\u0430\u0439\u0434\u0436\u0435\u0441\u0442/, requireOnboarded, handleDigest);
@@ -538,11 +575,43 @@ export function createBot(): Bot {
     try { await ctx.deleteMessage(); } catch (err) { logger.warn('bot', 'Telegram API call failed', { error: String(err) }); }
   });
 
+  // --- Strategist proposal approval ---
+
+  bot.callbackQuery(/^prop_approve:(\d+)$/, async (ctx) => {
+    if (!ctx.from || ctx.from.id !== CONFIG.adminTelegramId) return;
+    await ctx.answerCallbackQuery();
+    const proposalId = parseInt(ctx.match[1], 10);
+    const ok = approveProposal(proposalId);
+    if (ok) {
+      const msgText = ctx.callbackQuery.message?.text ?? '';
+      try {
+        await ctx.editMessageText(`\u2705 ${msgText}`, { reply_markup: undefined });
+      } catch (err) { logger.warn('bot', 'Failed to edit proposal message', { error: String(err) }); }
+    } else {
+      await ctx.answerCallbackQuery({ text: '\u0423\u0436\u0435 \u043E\u0431\u0440\u0430\u0431\u043E\u0442\u0430\u043D\u043E' });
+    }
+  });
+
+  bot.callbackQuery(/^prop_reject:(\d+)$/, async (ctx) => {
+    if (!ctx.from || ctx.from.id !== CONFIG.adminTelegramId) return;
+    await ctx.answerCallbackQuery();
+    const proposalId = parseInt(ctx.match[1], 10);
+    const ok = rejectProposal(proposalId);
+    if (ok) {
+      const msgText = ctx.callbackQuery.message?.text ?? '';
+      try {
+        await ctx.editMessageText(`\u274C ${msgText}`, { reply_markup: undefined });
+      } catch (err) { logger.warn('bot', 'Failed to edit proposal message', { error: String(err) }); }
+    } else {
+      await ctx.answerCallbackQuery({ text: '\u0423\u0436\u0435 \u043E\u0431\u0440\u0430\u0431\u043E\u0442\u0430\u043D\u043E' });
+    }
+  });
+
   // --- Inline keyboard callbacks ---
 
   bot.on('callback_query:data', async (ctx) => {
     const data = ctx.callbackQuery.data;
-    if (data.startsWith('format:') || data.startsWith('domain:') || data.startsWith('onb:') || data.startsWith('edit:') || data.startsWith('buy:') || data.startsWith('quick:') || data === 'edit_profile' || data === 'clear_confirm' || data === 'clear_cancel') return;
+    if (data.startsWith('format:') || data.startsWith('domain:') || data.startsWith('onb:') || data.startsWith('edit:') || data.startsWith('buy:') || data.startsWith('quick:') || data.startsWith('prop_') || data === 'edit_profile' || data === 'clear_confirm' || data === 'clear_cancel') return;
 
     const [action, idStr] = data.split(':');
     const id = parseInt(idStr, 10);
@@ -641,6 +710,12 @@ export function createBot(): Bot {
         // Check if cached — no limit needed
         const cached = getCoverLetter(user.id, id);
         if (!cached) {
+          // Rate limit: prevent spam-clicking
+          const cooldown = checkCooldown(user.id);
+          if (!cooldown.allowed) {
+            await ctx.answerCallbackQuery({ text: `Подожди ${cooldown.remainingSec} сек` });
+            return;
+          }
           // Freemium gate: check cover letter limit
           const canGenerate = checkCoverLetterLimit(user);
           if (!canGenerate) {
@@ -675,6 +750,7 @@ export function createBot(): Bot {
 
           if (!cached) {
             consumeCoverLetterQuota(user);
+            setCooldown(user.id);
           }
           await ctx.editMessageText(formatVacancyWithLetter(vacancy, letter), {
             parse_mode: 'HTML',
@@ -698,8 +774,45 @@ export function createBot(): Bot {
         break;
       }
 
+      case 'skills': {
+        await ctx.answerCallbackQuery();
+        const skillsList = vacancy.skills.length > 0 ? vacancy.skills.join(', ') : 'не указаны';
+        const descSnippet = vacancy.description
+          ? vacancy.description.replace(/<[^>]+>/g, '').slice(0, 1000)
+          : '';
+        const lines = [
+          `\u{1F6E0}\uFE0F <b>Навыки вакансии</b>`,
+          '',
+          `<code>${escapeHtml(skillsList)}</code>`,
+        ];
+        if (descSnippet) {
+          lines.push('', `<b>Описание:</b>`, escapeHtml(descSnippet));
+          if (vacancy.description && vacancy.description.replace(/<[^>]+>/g, '').length > 1000) {
+            lines.push('...');
+          }
+        }
+        const backBtn = new InlineKeyboard().text('\u25C0\uFE0F Назад', `view:${id}`);
+        try {
+          await ctx.editMessageText(lines.join('\n'), {
+            parse_mode: 'HTML',
+            reply_markup: backBtn,
+            link_preview_options: { is_disabled: true },
+          });
+        } catch (err) {
+          logger.warn('bot', 'Failed to show skills', { error: String(err) });
+        }
+        break;
+      }
+
       case 'restyle': {
         await ctx.answerCallbackQuery();
+
+        // Rate limit: prevent spam-clicking
+        const restyleCooldown = checkCooldown(user.id);
+        if (!restyleCooldown.allowed) {
+          await ctx.answerCallbackQuery({ text: `Подожди ${restyleCooldown.remainingSec} сек` });
+          return;
+        }
 
         // Freemium gate: restyle always counts as a new generation
         const canRestyle = checkCoverLetterLimit(user);
@@ -729,6 +842,7 @@ export function createBot(): Bot {
           const letter = await generateCoverLetter(user, vacancy, true);
           clearTimeout(slowTimer);
           consumeCoverLetterQuota(user);
+          setCooldown(user.id);
           await ctx.editMessageText(formatVacancyWithLetter(vacancy, letter), {
             parse_mode: 'HTML',
             reply_markup: coverLetterButtons(id),
@@ -780,6 +894,24 @@ async function sendVacancyCards(ctx: Context, vacancies: ScoredVacancy[]): Promi
       link_preview_options: { is_disabled: true },
     });
   }
+}
+
+// --- Rate limiting ---
+
+/** Cooldown per user for cover letter generation (prevents spam-clicking) */
+const coverLetterCooldowns = new Map<number, number>();
+const COVER_LETTER_COOLDOWN_MS = 30_000; // 30 seconds between generations
+
+function checkCooldown(userId: number): { allowed: boolean; remainingSec: number } {
+  const lastTime = coverLetterCooldowns.get(userId);
+  if (!lastTime) return { allowed: true, remainingSec: 0 };
+  const elapsed = Date.now() - lastTime;
+  if (elapsed >= COVER_LETTER_COOLDOWN_MS) return { allowed: true, remainingSec: 0 };
+  return { allowed: false, remainingSec: Math.ceil((COVER_LETTER_COOLDOWN_MS - elapsed) / 1000) };
+}
+
+function setCooldown(userId: number): void {
+  coverLetterCooldowns.set(userId, Date.now());
 }
 
 // --- Freemium helpers ---

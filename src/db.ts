@@ -97,6 +97,14 @@ function initSchema() {
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    -- Strategist proposals (approval flow)
+    CREATE TABLE IF NOT EXISTS proposals (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_text   TEXT NOT NULL,
+      status      TEXT NOT NULL DEFAULT 'pending',
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
   // Migrate: add new profile columns (v0.2.0)
   const columns = getDb().prepare("PRAGMA table_info(users)").all() as { name: string }[];
@@ -143,8 +151,69 @@ function initSchema() {
     }
   }
 
+  // FK CASCADE migration — recreate user_vacancies and cover_letters with ON DELETE CASCADE
+  migrateFkCascade();
+
   logger.info('db', 'Schema initialized');
   seedOwner();
+}
+
+function migrateFkCascade() {
+  const d = getDb();
+  const uvSql = (d.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='user_vacancies'").get() as { sql: string } | undefined)?.sql ?? '';
+  if (uvSql.includes('ON DELETE CASCADE')) return; // already migrated
+
+  logger.info('db', 'Migrating FK CASCADE for user_vacancies and cover_letters');
+
+  d.exec('BEGIN TRANSACTION');
+  try {
+    // user_vacancies
+    d.exec(`
+      CREATE TABLE user_vacancies_new (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        vacancy_id   INTEGER NOT NULL REFERENCES vacancies(id) ON DELETE CASCADE,
+        score        INTEGER NOT NULL DEFAULT 0,
+        score_skills INTEGER NOT NULL DEFAULT 0,
+        score_salary INTEGER NOT NULL DEFAULT 0,
+        score_format INTEGER NOT NULL DEFAULT 0,
+        score_domain INTEGER NOT NULL DEFAULT 0,
+        status       TEXT NOT NULL DEFAULT 'new',
+        notified     INTEGER NOT NULL DEFAULT 0,
+        created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(user_id, vacancy_id)
+      )
+    `);
+    d.exec(`INSERT INTO user_vacancies_new (id, user_id, vacancy_id, score, score_skills, score_salary, score_format, score_domain, status, notified, created_at)
+            SELECT id, user_id, vacancy_id, score, score_skills, score_salary, score_format, score_domain, status, notified, created_at FROM user_vacancies`);
+    d.exec('DROP TABLE user_vacancies');
+    d.exec('ALTER TABLE user_vacancies_new RENAME TO user_vacancies');
+    d.exec('CREATE INDEX IF NOT EXISTS idx_uv_user_score ON user_vacancies(user_id, score DESC)');
+    d.exec('CREATE INDEX IF NOT EXISTS idx_uv_user_status ON user_vacancies(user_id, status)');
+    d.exec('CREATE INDEX IF NOT EXISTS idx_uv_unnotified ON user_vacancies(user_id, notified, score DESC)');
+
+    // cover_letters
+    d.exec(`
+      CREATE TABLE cover_letters_new (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        vacancy_id INTEGER NOT NULL REFERENCES vacancies(id) ON DELETE CASCADE,
+        text       TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(user_id, vacancy_id)
+      )
+    `);
+    d.exec(`INSERT INTO cover_letters_new (id, user_id, vacancy_id, text, created_at)
+            SELECT id, user_id, vacancy_id, text, created_at FROM cover_letters`);
+    d.exec('DROP TABLE cover_letters');
+    d.exec('ALTER TABLE cover_letters_new RENAME TO cover_letters');
+
+    d.exec('COMMIT');
+    logger.info('db', 'FK CASCADE migration complete');
+  } catch (err) {
+    d.exec('ROLLBACK');
+    logger.error('db', 'FK CASCADE migration failed', { error: String(err) });
+  }
 }
 
 /** Seed the owner's profile so they skip onboarding (minimal — fill via /profile) */
@@ -509,7 +578,7 @@ export function savePayment(userId: number, chargeId: string, payload: string, a
   getDb().exec(`
     CREATE TABLE IF NOT EXISTS payments (
       id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id             INTEGER NOT NULL REFERENCES users(id),
+      user_id             INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       telegram_charge_id  TEXT NOT NULL UNIQUE,
       payload             TEXT NOT NULL,
       amount_stars        INTEGER NOT NULL,
@@ -521,6 +590,41 @@ export function savePayment(userId: number, chargeId: string, payload: string, a
     INSERT INTO payments (user_id, telegram_charge_id, payload, amount_stars, product)
     VALUES (?, ?, ?, ?, ?)
   `).run(userId, chargeId, payload, amountStars, product);
+}
+
+// --- Proposals (strategist approval flow) ---
+
+export interface Proposal {
+  id: number;
+  taskText: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+}
+
+export function saveProposal(taskText: string): number {
+  const result = getDb().prepare('INSERT INTO proposals (task_text) VALUES (?)').run(taskText);
+  return Number(result.lastInsertRowid);
+}
+
+export function approveProposal(id: number): boolean {
+  const result = getDb().prepare("UPDATE proposals SET status = 'approved' WHERE id = ? AND status = 'pending'").run(id);
+  return result.changes > 0;
+}
+
+export function rejectProposal(id: number): boolean {
+  const result = getDb().prepare("UPDATE proposals SET status = 'rejected' WHERE id = ? AND status = 'pending'").run(id);
+  return result.changes > 0;
+}
+
+export function getApprovedProposals(): Proposal[] {
+  const rows = getDb().prepare("SELECT * FROM proposals WHERE status = 'approved' ORDER BY created_at ASC").all() as any[];
+  return rows.map(r => ({ id: r.id, taskText: r.task_text, status: r.status, createdAt: r.created_at }));
+}
+
+export function deleteProposals(ids: number[]): void {
+  if (ids.length === 0) return;
+  const placeholders = ids.map(() => '?').join(',');
+  getDb().prepare(`DELETE FROM proposals WHERE id IN (${placeholders})`).run(...ids);
 }
 
 // --- Global Stats ---
@@ -570,6 +674,52 @@ export function getGlobalStats(): GlobalStats {
   ).get() as any).c;
 
   return { totalUsers, proUsers, totalVacancies, vacanciesBySource, totalCoverLetters, avgScore, mau };
+}
+
+export interface ScoreDistribution {
+  buckets: { range: string; count: number }[];
+  total: number;
+  median: number;
+  p25: number;
+  p75: number;
+  above40: number;
+  above60: number;
+  above80: number;
+}
+
+export function getScoreDistribution(): ScoreDistribution {
+  const d = getDb();
+  const rows = d.prepare('SELECT score FROM user_vacancies ORDER BY score ASC').all() as { score: number }[];
+  const total = rows.length;
+
+  if (total === 0) {
+    return { buckets: [], total: 0, median: 0, p25: 0, p75: 0, above40: 0, above60: 0, above80: 0 };
+  }
+
+  const buckets = [
+    { range: '0-19', count: 0 },
+    { range: '20-39', count: 0 },
+    { range: '40-59', count: 0 },
+    { range: '60-79', count: 0 },
+    { range: '80-100', count: 0 },
+  ];
+  for (const { score } of rows) {
+    if (score < 20) buckets[0].count++;
+    else if (score < 40) buckets[1].count++;
+    else if (score < 60) buckets[2].count++;
+    else if (score < 80) buckets[3].count++;
+    else buckets[4].count++;
+  }
+
+  const scores = rows.map(r => r.score);
+  const median = scores[Math.floor(total / 2)];
+  const p25 = scores[Math.floor(total * 0.25)];
+  const p75 = scores[Math.floor(total * 0.75)];
+  const above40 = scores.filter(s => s >= 40).length;
+  const above60 = scores.filter(s => s >= 60).length;
+  const above80 = scores.filter(s => s >= 80).length;
+
+  return { buckets, total, median, p25, p75, above40, above60, above80 };
 }
 
 function rowToScoredVacancy(row: any): ScoredVacancy {

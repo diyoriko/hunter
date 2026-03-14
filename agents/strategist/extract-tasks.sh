@@ -1,12 +1,15 @@
 #!/bin/bash
-# Extract new tasks from strategist report and append to BACKLOG.md
-# Parses "## Новые задачи в бэклог" section from the report
-# Tasks must follow format: - [ ] **Name** — description
+# Extract new tasks from strategist report and send as proposals for admin approval
+# Tasks are sent to Telegram with Approve/Reject buttons
+# Approved tasks are fetched via /proposals HTTP endpoint on next run
 
 set -euo pipefail
 
 REPORT_FILE="$1"
 BACKLOG_FILE="$2"
+BOT_TOKEN="${3:-}"
+ADMIN_CHAT_ID="${4:-}"
+BOT_URL="${5:-}"
 
 if [ ! -f "$REPORT_FILE" ]; then
   echo "Report not found: $REPORT_FILE"
@@ -33,8 +36,8 @@ fi
 TASK_COUNT=$(echo "$TASKS" | wc -l | tr -d ' ')
 echo "Found $TASK_COUNT new tasks"
 
-# Check for duplicates and append only new ones
-ADDED=0
+# Check for duplicates against existing backlog
+SENT=0
 while IFS= read -r task; do
   # Extract task name (bold text)
   TASK_NAME=$(echo "$task" | sed -n 's/.*\*\*\(.*\)\*\*.*/\1/p')
@@ -48,54 +51,71 @@ while IFS= read -r task; do
     continue
   fi
 
-  # Find the right section to append to based on priority marker in the task
-  # Default: append to the last P1 group in the active sprint
-  # Format: tasks should include priority hint like (P0), (P1) etc.
-  PRIORITY=$(echo "$task" | grep -oE '\(P[0-3]\)' | tr -d '()' || echo "")
-
-  if [ -z "$PRIORITY" ]; then
-    # Default to P1 if no priority specified
-    PRIORITY="P1"
+  # If no bot credentials, fall back to direct BACKLOG.md edit (legacy mode)
+  if [ -z "$BOT_TOKEN" ] || [ -z "$ADMIN_CHAT_ID" ] || [ -z "$BOT_URL" ]; then
+    echo "No bot credentials — adding directly to backlog: $TASK_NAME"
+    add_task_to_backlog "$task" "$BACKLOG_FILE"
+    continue
   fi
 
-  # Remove priority hint from task text
-  CLEAN_TASK=$(echo "$task" | sed "s/ *($PRIORITY)//")
+  # Save proposal to bot DB via HTTP and get ID
+  PROPOSAL_ID=$(curl -s -X POST "${BOT_URL}/proposal" \
+    -H "Content-Type: application/json" \
+    -H "x-admin-token: ${BOT_TOKEN}" \
+    -d "{\"task_text\": $(echo "$task" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().strip()))')}" \
+    | python3 -c "import json,sys; print(json.load(sys.stdin).get('id', ''))" 2>/dev/null || echo "")
 
-  # Append task before the metadata section
-  # Find "## Метаданные" line and insert before it
-  if grep -q "^## Метаданные" "$BACKLOG_FILE"; then
-    # Find the right priority group, or append before metadata
-    TARGET_GROUP="### ${PRIORITY}:"
-    if grep -q "^${TARGET_GROUP}" "$BACKLOG_FILE"; then
-      # Find the last task line in this group and append after it
-      # Use awk to insert after last "- [ ]" line in the target group
-      awk -v task="$CLEAN_TASK" -v target="$TARGET_GROUP" '
-        BEGIN { in_group=0; last_task=0 }
-        $0 ~ "^"target { in_group=1 }
-        in_group && /^### / && $0 !~ "^"target { in_group=0 }
-        in_group && /^---/ { in_group=0 }
-        in_group && /^- \[/ { last_task=NR }
-        { lines[NR]=$0 }
-        END {
-          for(i=1; i<=NR; i++) {
-            print lines[i]
-            if(i==last_task) print task
-          }
-        }
-      ' "$BACKLOG_FILE" > "${BACKLOG_FILE}.tmp" && mv "${BACKLOG_FILE}.tmp" "$BACKLOG_FILE"
-    else
-      # No matching group — append before metadata
-      sed -i '' "/^## Метаданные/i\\
-$CLEAN_TASK
-" "$BACKLOG_FILE"
-    fi
-  else
-    # No metadata section — append at end
-    echo "$CLEAN_TASK" >> "$BACKLOG_FILE"
+  if [ -z "$PROPOSAL_ID" ]; then
+    echo "Failed to save proposal to bot DB, skipping: $TASK_NAME"
+    continue
   fi
 
-  echo "Added: $TASK_NAME"
-  ADDED=$((ADDED + 1))
+  # Send as Telegram message with Approve/Reject inline buttons
+  ESCAPED_TASK=$(echo "$task" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().strip()))')
+
+  PAYLOAD=$(cat <<ENDJSON
+{
+  "chat_id": "${ADMIN_CHAT_ID}",
+  "text": "📋 Предложение стратега:\n\n${task}",
+  "reply_markup": {
+    "inline_keyboard": [[
+      {"text": "✅ Одобрить", "callback_data": "prop_approve:${PROPOSAL_ID}"},
+      {"text": "❌ Отклонить", "callback_data": "prop_reject:${PROPOSAL_ID}"}
+    ]]
+  }
+}
+ENDJSON
+)
+
+  # Use python to build proper JSON to avoid escaping issues
+  python3 -c "
+import json, urllib.request
+
+task_text = $(echo "$task" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().strip()))')
+payload = {
+    'chat_id': '${ADMIN_CHAT_ID}',
+    'text': f'📋 Предложение стратега:\n\n{task_text}',
+    'reply_markup': {
+        'inline_keyboard': [[
+            {'text': '✅ Одобрить', 'callback_data': 'prop_approve:${PROPOSAL_ID}'},
+            {'text': '❌ Отклонить', 'callback_data': 'prop_reject:${PROPOSAL_ID}'}
+        ]]
+    }
+}
+data = json.dumps(payload).encode()
+req = urllib.request.Request(
+    'https://api.telegram.org/bot${BOT_TOKEN}/sendMessage',
+    data=data,
+    headers={'Content-Type': 'application/json'}
+)
+try:
+    urllib.request.urlopen(req)
+except Exception as e:
+    print(f'Telegram send failed: {e}')
+" 2>&1 || echo "Telegram notification failed for: $TASK_NAME"
+
+  echo "Sent proposal: $TASK_NAME (id: $PROPOSAL_ID)"
+  SENT=$((SENT + 1))
 done <<< "$TASKS"
 
-echo "Added $ADDED new tasks to backlog"
+echo "Sent $SENT proposals for approval"
