@@ -9,6 +9,9 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      TELEGRAM_BOT_TOKEN: test:ci-token
+      ADMIN_TELEGRAM_ID: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
