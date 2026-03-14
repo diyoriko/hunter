@@ -1,7 +1,7 @@
 import { Bot, Context, Keyboard, InlineKeyboard } from 'grammy';
 import { CONFIG } from './config';
 import { logger } from './logger';
-import { getOrCreateUser, getUserVacancies, getVacancyById, updateUserVacancyStatus, updateUser, getUserStats, markVacanciesNotified, isProUser, incrementLettersUsed, useCredits } from './db';
+import { getOrCreateUser, getUserVacancies, getVacancyById, updateUserVacancyStatus, updateUser, getUserStats, markVacanciesNotified, isProUser, incrementLettersUsed, useCredits, activatePro, addCredits, savePayment } from './db';
 import { handleOnboarding, handleFormatCallback, handleDomainCallback, handleOnboardingNavCallback, askQuestion, showEditMenu, editingSessions, handleEditFieldCallback } from './onboarding';
 import { getCoverLetter, generateCoverLetter } from './cover-letter';
 import {
@@ -209,6 +209,7 @@ async function handleSubscribe(ctx: Context): Promise<void> {
   }
 
   const remaining = Math.max(0, CONFIG.freemium.free.coverLetters - user.lettersUsed);
+  const { stars } = CONFIG;
 
   const text = [
     '<b>Тарифы Hunter</b>',
@@ -222,24 +223,28 @@ async function handleSubscribe(ctx: Context): Promise<void> {
     '',
     '━━━━━━━━━━━━━━━━━━━━',
     '',
-    '<b>Pro — 500 Stars/мес</b> (~350 руб)',
+    `<b>Pro — ${stars.proMonthly} Stars/мес</b>`,
     '  Безлимит писем и дайджест',
     '  Push-алерты: 5 вакансий/скрейп',
     '  Утренний дайджест',
     '',
-    '<b>Pro Год — 4800 Stars/год</b> (~3360 руб, -20%)',
+    `<b>Pro Год — ${stars.proYearly} Stars/год</b> (-20%)`,
     '',
     '━━━━━━━━━━━━━━━━━━━━',
     '',
     '<b>Кредиты</b> (разовая покупка)',
-    '  50 Stars = 10 кредитов (2 письма)',
-    '  200 Stars = 50 кредитов (10 писем)',
-    `  Твои кредиты: ${user.credits}`,
-    '',
-    '<i>Оплата через Telegram Stars скоро!</i>',
-  ].join('\n');
+    `  ${stars.creditsSmall.stars} Stars = ${stars.creditsSmall.letters} письма`,
+    `  ${stars.creditsLarge.stars} Stars = ${stars.creditsLarge.letters} писем`,
+    user.credits > 0 ? `  Твои кредиты: ${user.credits}` : '',
+  ].filter(Boolean).join('\n');
 
-  await ctx.reply(text, { parse_mode: 'HTML', reply_markup: mainKeyboard });
+  const buttons = new InlineKeyboard()
+    .text(`Pro мес — ${stars.proMonthly} Stars`, 'buy:pro_monthly').row()
+    .text(`Pro год — ${stars.proYearly} Stars (-20%)`, 'buy:pro_yearly').row()
+    .text(`${stars.creditsSmall.letters} письма — ${stars.creditsSmall.stars} Stars`, 'buy:credits_small')
+    .text(`${stars.creditsLarge.letters} писем — ${stars.creditsLarge.stars} Stars`, 'buy:credits_large');
+
+  await ctx.reply(text, { parse_mode: 'HTML', reply_markup: buttons });
 }
 
 // --- Bot setup ---
@@ -322,6 +327,127 @@ export function createBot(): Bot {
 
   bot.command('subscribe', requireOnboarded, handleSubscribe);
 
+  // --- Buy callbacks (Telegram Stars invoices) ---
+
+  bot.callbackQuery(/^buy:(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    if (!ctx.from) return;
+
+    const product = ctx.match[1];
+    const { stars } = CONFIG;
+
+    type ProductInfo = { title: string; description: string; amount: number; payload: string };
+    const products: Record<string, ProductInfo> = {
+      pro_monthly: {
+        title: 'Hunter Pro — 1 месяц',
+        description: 'Безлимит писем, полный дайджест, 5 push-алертов/скрейп',
+        amount: stars.proMonthly,
+        payload: 'pro_monthly',
+      },
+      pro_yearly: {
+        title: 'Hunter Pro — 1 год (-20%)',
+        description: 'Безлимит писем, полный дайджест, 5 push-алертов/скрейп. Скидка 20%',
+        amount: stars.proYearly,
+        payload: 'pro_yearly',
+      },
+      credits_small: {
+        title: `${stars.creditsSmall.letters} сопроводительных письма`,
+        description: `Пакет на ${stars.creditsSmall.letters} генерации cover letter`,
+        amount: stars.creditsSmall.stars,
+        payload: 'credits_small',
+      },
+      credits_large: {
+        title: `${stars.creditsLarge.letters} сопроводительных писем`,
+        description: `Пакет на ${stars.creditsLarge.letters} генераций cover letter`,
+        amount: stars.creditsLarge.stars,
+        payload: 'credits_large',
+      },
+    };
+
+    const info = products[product];
+    if (!info) return;
+
+    try {
+      await ctx.replyWithInvoice(
+        info.title,
+        info.description,
+        info.payload,
+        'XTR',
+        [{ label: info.title, amount: info.amount }],
+        { provider_token: '' },
+      );
+    } catch (err) {
+      logger.error('bot', 'Failed to send invoice', { error: String(err), product });
+      await ctx.reply('Ошибка при создании платежа. Попробуй позже.');
+    }
+  });
+
+  // --- Pre-checkout query (must respond within 10 seconds) ---
+
+  bot.on('pre_checkout_query', async (ctx) => {
+    try {
+      await ctx.answerPreCheckoutQuery(true);
+    } catch (err) {
+      logger.error('bot', 'Pre-checkout query failed', { error: String(err) });
+    }
+  });
+
+  // --- Successful payment handler ---
+
+  bot.on('message:successful_payment', async (ctx) => {
+    if (!ctx.from) return;
+    const payment = ctx.message!.successful_payment!;
+    const user = getOrCreateUser(ctx.from.id);
+    const payload = payment.invoice_payload;
+    const chargeId = payment.telegram_payment_charge_id;
+
+    try {
+      savePayment(user.id, chargeId, payload, payment.total_amount, payload);
+
+      if (payload === 'pro_monthly') {
+        const expires = new Date();
+        expires.setMonth(expires.getMonth() + 1);
+        activatePro(user.id, expires);
+        await ctx.reply(
+          `<b>Pro активирован!</b>\n\nДействует до: ${expires.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}`,
+          { parse_mode: 'HTML', reply_markup: mainKeyboard },
+        );
+      } else if (payload === 'pro_yearly') {
+        const expires = new Date();
+        expires.setFullYear(expires.getFullYear() + 1);
+        activatePro(user.id, expires);
+        await ctx.reply(
+          `<b>Pro на год активирован!</b>\n\nДействует до: ${expires.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}`,
+          { parse_mode: 'HTML', reply_markup: mainKeyboard },
+        );
+      } else if (payload === 'credits_small') {
+        const credits = CONFIG.stars.creditsSmall.letters * CONFIG.freemium.creditsPerLetter;
+        addCredits(user.id, credits);
+        await ctx.reply(
+          `<b>Кредиты добавлены!</b>\n\n+${credits} кредитов (${CONFIG.stars.creditsSmall.letters} письма)`,
+          { parse_mode: 'HTML', reply_markup: mainKeyboard },
+        );
+      } else if (payload === 'credits_large') {
+        const credits = CONFIG.stars.creditsLarge.letters * CONFIG.freemium.creditsPerLetter;
+        addCredits(user.id, credits);
+        await ctx.reply(
+          `<b>Кредиты добавлены!</b>\n\n+${credits} кредитов (${CONFIG.stars.creditsLarge.letters} писем)`,
+          { parse_mode: 'HTML', reply_markup: mainKeyboard },
+        );
+      }
+
+      logger.info('payment', `Payment received: ${payload}`, {
+        userId: user.id,
+        telegramId: ctx.from.id,
+        amount: payment.total_amount,
+        chargeId,
+      });
+    } catch (err) {
+      logger.error('payment', 'Payment processing failed', { error: String(err), chargeId, payload });
+      await ctx.reply('Оплата получена, но произошла ошибка активации. Напиши в поддержку.');
+    }
+  });
+
   // --- Slash commands ---
 
   bot.command('digest', requireOnboarded, handleDigest);
@@ -340,7 +466,7 @@ export function createBot(): Bot {
 
   bot.on('callback_query:data', async (ctx) => {
     const data = ctx.callbackQuery.data;
-    if (data.startsWith('format:') || data.startsWith('domain:') || data.startsWith('onb:') || data.startsWith('edit:') || data === 'edit_profile') return;
+    if (data.startsWith('format:') || data.startsWith('domain:') || data.startsWith('onb:') || data.startsWith('edit:') || data.startsWith('buy:') || data === 'edit_profile') return;
 
     const [action, idStr] = data.split(':');
     const id = parseInt(idStr, 10);

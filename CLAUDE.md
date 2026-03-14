@@ -45,6 +45,7 @@ src/
 - **vacancies** — shared pool (deduped by source + external_id)
 - **user_vacancies** — per-user scores, status (new/applied/rejected), notified flag
 - **cover_letters** — per-user cached letters
+- **payments** — Telegram Stars payment records (charge_id, product, amount)
 - **kv** — key-value store (deploy tracking, scheduler state)
 
 ## Freemium Model
@@ -57,10 +58,13 @@ src/
 | Credits | Покупаются отдельно | — |
 
 - 1 cover letter = 5 credits (разовая покупка без подписки)
-- Pro: 500 Stars/мес, 4800 Stars/год (-20%)
-- /subscribe — тарифы и лимиты
+- Pro: 700 Stars/мес, 6720 Stars/год (-20%)
+- Credits: 100 Stars = 3 письма, 300 Stars = 10 писем
+- Оплата: Telegram Stars (XTR), provider_token = ""
+- /subscribe — тарифы и лимиты, inline buy buttons → invoice → payment
 - Guards в bot.ts: checkCoverLetterLimit(), consumeCoverLetterQuota()
 - Auto-expire: scheduler проверяет plan_expires_at каждый скрейп
+- Renewal reminder: за 3 дня до истечения Pro (1 раз/день)
 
 ## Key Design Decisions
 

@@ -502,6 +502,26 @@ export function expireProPlans(): number {
   return result.changes;
 }
 
+// --- Payments ---
+
+export function savePayment(userId: number, chargeId: string, payload: string, amountStars: number, product: string): void {
+  getDb().exec(`
+    CREATE TABLE IF NOT EXISTS payments (
+      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id             INTEGER NOT NULL REFERENCES users(id),
+      telegram_charge_id  TEXT NOT NULL UNIQUE,
+      payload             TEXT NOT NULL,
+      amount_stars        INTEGER NOT NULL,
+      product             TEXT NOT NULL,
+      created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  getDb().prepare(`
+    INSERT INTO payments (user_id, telegram_charge_id, payload, amount_stars, product)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(userId, chargeId, payload, amountStars, product);
+}
+
 // --- Global Stats ---
 
 export interface GlobalStats {
