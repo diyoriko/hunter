@@ -11,24 +11,25 @@ const parsed = envSchema.parse(process.env);
 
 export const CONFIG = {
   /** Bot version — bump on each deploy */
-  version: '0.2.0',
+  version: '0.3.0',
 
   /** Admin Telegram ID for deploy notifications */
   adminTelegramId: parsed.ADMIN_TELEGRAM_ID,
 
   /** Human-readable deploy notes (non-technical!) */
   deployNotes: [
-    '✅ <b>Онбординг стал удобнее</b>',
-    '      Кнопки «Пропустить» и «Назад» на каждом шаге — больше не нужно набирать текст вручную',
+    '✅ <b>Freemium-модель</b>',
+    '      Free: 5 писем, 15 вакансий в дайджесте, 2 push-алерта',
+    '      Pro: безлимит всего + полные push-алерты',
     '',
-    '✅ <b>Редактирование профиля</b>',
-    '      Меняй любое поле по отдельности — не нужно проходить весь онбординг заново',
+    '✅ <b>Команда /subscribe</b>',
+    '      Посмотри тарифы и лимиты прямо в боте',
     '',
-    '✅ <b>22 отрасли + своя</b>',
-    '      Расширенный список индустрий на выбор, а если нужной нет — добавь свою текстом',
+    '✅ <b>Paywall</b>',
+    '      Когда лимит закончится — подсказка с тарифами',
     '',
-    '✅ <b>Уведомления о деплое</b>',
-    '      После каждого обновления бот присылает отчёт с описанием изменений (это оно!)',
+    '✅ <b>Кредиты</b>',
+    '      Разовая покупка кредитов для генерации писем без подписки',
   ],
 
   telegramBotToken: parsed.TELEGRAM_BOT_TOKEN,
@@ -67,5 +68,20 @@ export const CONFIG = {
     pushMinScore: 70,
     pushMaxCards: 5,
     enabled: process.env.SCHEDULER_ENABLED !== 'false',
+  },
+
+  /** Freemium limits */
+  freemium: {
+    free: {
+      coverLetters: 5,         // lifetime total
+      digestPageSize: 15,      // max vacancies in digest
+      pushMaxCards: 2,          // push notifications per scrape
+    },
+    pro: {
+      coverLetters: Infinity,
+      digestPageSize: Infinity, // uses default pageSize
+      pushMaxCards: 5,
+    },
+    creditsPerLetter: 5,       // 1 cover letter = 5 credits
   },
 } as const;

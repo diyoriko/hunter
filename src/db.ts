@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { CONFIG } from './config';
 import { logger } from './logger';
-import type { UserProfile, OnboardingState, ScoredVacancy, Vacancy, VacancyStatus, VacancySource, WorkFormat, SkillWeight, DomainWeight } from './types';
+import type { UserProfile, OnboardingState, ScoredVacancy, Vacancy, VacancyStatus, VacancySource, WorkFormat, SkillWeight, DomainWeight, Plan } from './types';
 
 let db: Database.Database;
 
@@ -128,6 +128,20 @@ function initSchema() {
     } catch { /* ok */ }
   }
 
+  // Freemium plan columns (v0.3.0)
+  const colsAfter = new Set((getDb().prepare("PRAGMA table_info(users)").all() as { name: string }[]).map(c => c.name));
+  const planMigrations: [string, string][] = [
+    ['plan', "ALTER TABLE users ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'"],
+    ['plan_expires_at', "ALTER TABLE users ADD COLUMN plan_expires_at TEXT"],
+    ['letters_used', "ALTER TABLE users ADD COLUMN letters_used INTEGER NOT NULL DEFAULT 0"],
+    ['credits', "ALTER TABLE users ADD COLUMN credits INTEGER NOT NULL DEFAULT 0"],
+  ];
+  for (const [col, sql] of planMigrations) {
+    if (!colsAfter.has(col)) {
+      try { getDb().exec(sql); } catch { /* ok */ }
+    }
+  }
+
   logger.info('db', 'Schema initialized');
   seedOwner();
 }
@@ -243,6 +257,10 @@ function rowToUser(row: any): UserProfile {
     about: row.about,
     onboardingState: row.onboarding_state as OnboardingState,
     createdAt: new Date(row.created_at),
+    plan: (row.plan ?? 'free') as Plan,
+    planExpiresAt: row.plan_expires_at ? new Date(row.plan_expires_at) : null,
+    lettersUsed: row.letters_used ?? 0,
+    credits: row.credits ?? 0,
   };
 }
 
@@ -428,6 +446,60 @@ export function getUserStats(userId: number): UserStats {
   for (const r of sourceRows) sources[r.source] = r.c;
 
   return { total, relevant, applied, rejected, avgScore, coverLetters, sources };
+}
+
+// --- Freemium helpers ---
+
+/** Check if user's Pro plan is active (not expired) */
+export function isProUser(user: UserProfile): boolean {
+  if (user.plan !== 'pro') return false;
+  if (!user.planExpiresAt) return true; // no expiry = lifetime pro
+  return user.planExpiresAt > new Date();
+}
+
+/** Increment cover letters used counter */
+export function incrementLettersUsed(userId: number): void {
+  getDb().prepare('UPDATE users SET letters_used = letters_used + 1 WHERE id = ?').run(userId);
+}
+
+/** Use credits for a cover letter (returns true if enough credits) */
+export function useCredits(userId: number, amount: number): boolean {
+  const result = getDb().prepare(
+    'UPDATE users SET credits = credits - ? WHERE id = ? AND credits >= ?'
+  ).run(amount, userId, amount);
+  return result.changes > 0;
+}
+
+/** Activate Pro plan */
+export function activatePro(userId: number, expiresAt: Date): void {
+  getDb().prepare(
+    'UPDATE users SET plan = ?, plan_expires_at = ? WHERE id = ?'
+  ).run('pro', expiresAt.toISOString(), userId);
+}
+
+/** Add credits to user */
+export function addCredits(userId: number, amount: number): void {
+  getDb().prepare('UPDATE users SET credits = credits + ? WHERE id = ?').run(amount, userId);
+}
+
+/** Get users whose Pro expires within N days */
+export function getUsersExpiringWithin(days: number): UserProfile[] {
+  const rows = getDb().prepare(`
+    SELECT * FROM users
+    WHERE plan = 'pro' AND plan_expires_at IS NOT NULL
+      AND plan_expires_at <= datetime('now', '+' || ? || ' days')
+      AND plan_expires_at > datetime('now')
+  `).all(days) as any[];
+  return rows.map(rowToUser);
+}
+
+/** Expire Pro plans that have passed their expiration date */
+export function expireProPlans(): number {
+  const result = getDb().prepare(`
+    UPDATE users SET plan = 'free'
+    WHERE plan = 'pro' AND plan_expires_at IS NOT NULL AND plan_expires_at <= datetime('now')
+  `).run();
+  return result.changes;
 }
 
 function rowToScoredVacancy(row: any): ScoredVacancy {

@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import type { Bot } from 'grammy';
 import { runAllScrapers } from './scrapers/runner';
-import { getAllUsers, getUnnotifiedHighScoreVacancies, markVacanciesNotified, getDigestSummary, setKV } from './db';
+import { getAllUsers, getUnnotifiedHighScoreVacancies, markVacanciesNotified, getDigestSummary, setKV, isProUser, expireProPlans } from './db';
 import { formatVacancyDetail, vacancyButtons } from './digest';
 import { logger } from './logger';
 import { CONFIG } from './config';
@@ -39,6 +39,12 @@ async function runScheduledScrape(bot: Bot): Promise<void> {
   const startTime = Date.now();
 
   try {
+    // Expire Pro plans that have passed their date
+    const expired = expireProPlans();
+    if (expired > 0) {
+      logger.info('scheduler', `Expired ${expired} Pro plan(s)`);
+    }
+
     logger.info('scheduler', 'Starting scheduled scrape');
     const results = await runAllScrapers();
 
@@ -61,7 +67,7 @@ async function runScheduledScrape(bot: Bot): Promise<void> {
 
 async function sendPushNotifications(bot: Bot): Promise<void> {
   const users = getAllUsers();
-  const { pushMinScore, pushMaxCards } = CONFIG.scheduler;
+  const { pushMinScore } = CONFIG.scheduler;
   let totalSent = 0;
 
   for (const user of users) {
@@ -69,7 +75,10 @@ async function sendPushNotifications(bot: Bot): Promise<void> {
       const vacancies = getUnnotifiedHighScoreVacancies(user.id, pushMinScore);
       if (vacancies.length === 0) continue;
 
-      const toSend = vacancies.slice(0, pushMaxCards);
+      // Freemium: pro users get more push cards
+      const pro = isProUser(user);
+      const maxCards = pro ? CONFIG.freemium.pro.pushMaxCards : CONFIG.freemium.free.pushMaxCards;
+      const toSend = vacancies.slice(0, maxCards);
 
       await bot.api.sendMessage(
         user.telegramId,
