@@ -2,7 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import { Bot } from 'grammy';
 import { createBot } from './bot';
-import { getDb, getKV, setKV } from './db';
+import { getDb, getKV, setKV, getGlobalStats } from './db';
 import { CONFIG } from './config';
 import { logger } from './logger';
 import { startScheduler, stopScheduler } from './scheduler';
@@ -87,10 +87,24 @@ async function main() {
       return;
     }
 
+    // GET /stats — global metrics (auth required)
+    if (req.url === '/stats' && req.method === 'GET') {
+      const token = req.headers['x-admin-token'];
+      if (token !== CONFIG.telegramBotToken) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'unauthorized' }));
+        return;
+      }
+      const stats = getGlobalStats();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(stats));
+      return;
+    }
+
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'not found' }));
   }).listen(port, () => {
-    logger.info('main', `HTTP server on :${port} — /, /backup`);
+    logger.info('main', `HTTP server on :${port} — /, /backup, /stats`);
   });
 
   // Graceful shutdown — stop polling before Railway kills the process
