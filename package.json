@@ -12,6 +12,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
     "better-sqlite3": "^9.4.3",
     "cheerio": "^1.0.0",
     "dotenv": "^16.4.5",
