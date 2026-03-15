@@ -74,7 +74,7 @@ export function formatVacancyWithLetter(v: ScoredVacancy, letter: string): strin
 }
 
 /** Vacancy detail + loading state */
-export function formatVacancyLoading(v: ScoredVacancy, text: string = '\u0413\u0435\u043D\u0435\u0440\u0438\u0440\u0443\u044E \u043F\u0438\u0441\u044C\u043C\u043E...'): string {
+export function formatVacancyLoading(v: ScoredVacancy, text: string = '\u0413\u0435\u043D\u0435\u0440\u0438\u0440\u0443\u044E \u043E\u0442\u043A\u043B\u0438\u043A...'): string {
   return [
     formatVacancyDetail(v),
     '',
@@ -93,7 +93,7 @@ export function vacancyButtons(id: number, hasSkills = true): InlineKeyboard {
     .text('\u274C \u0421\u043A\u0440\u044B\u0442\u044C', `reject:${id}`)
     .row();
   if (hasSkills) {
-    kb.text('\u{1F6E0}\uFE0F \u0412\u0441\u0435 \u043D\u0430\u0432\u044B\u043A\u0438', `skills:${id}`).row();
+    kb.text('\u{1F4CB} \u0427\u0442\u043E \u0445\u043E\u0442\u044F\u0442', `details:${id}`).row();
   }
   kb.text('\u2705 \u041E\u0442\u043A\u043B\u0438\u043A\u043D\u0443\u043B\u0441\u044F', `applied:${id}`);
   return kb;

@@ -283,15 +283,9 @@ export function createBot(): Bot {
     }
 
     if (user.onboardingState === 'complete') {
-      const quickButtons = new InlineKeyboard()
-        .text('\u{1F4CB} \u0414\u0430\u0439\u0434\u0436\u0435\u0441\u0442', 'quick:digest')
-        .text('\u{1F464} \u041F\u0440\u043E\u0444\u0438\u043B\u044C', 'quick:profile')
-        .row()
-        .text('\u{1F4CA} \u0421\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0430', 'quick:stats')
-        .text('\u2B50 \u041F\u043E\u0434\u043F\u0438\u0441\u043A\u0430', 'quick:subscribe');
       await ctx.reply(
         `\u0421 \u0432\u043E\u0437\u0432\u0440\u0430\u0449\u0435\u043D\u0438\u0435\u043C, ${escapeHtml(user.name ?? '\u{1F44B}')}!`,
-        { parse_mode: 'HTML', reply_markup: quickButtons },
+        { parse_mode: 'HTML', reply_markup: mainKeyboard },
       );
       return;
     }
@@ -712,27 +706,28 @@ export function createBot(): Bot {
       }
 
       case 'cover': {
-        await ctx.answerCallbackQuery();
-
         // Check if cached — no limit needed
         const cached = getCoverLetter(user.id, id);
         if (!cached) {
           // Rate limit: prevent spam-clicking
           const cooldown = checkCooldown(user.id);
           if (!cooldown.allowed) {
-            await ctx.answerCallbackQuery({ text: `Подожди ${cooldown.remainingSec} сек` });
+            await ctx.answerCallbackQuery({ text: `\u23F3 \u041F\u043E\u0434\u043E\u0436\u0434\u0438 ${cooldown.remainingSec} \u0441\u0435\u043A` });
             return;
           }
           // Freemium gate: check cover letter limit
           const canGenerate = checkCoverLetterLimit(user);
           if (!canGenerate) {
+            await ctx.answerCallbackQuery();
             await ctx.reply(paywallText('letters', user), { parse_mode: 'HTML' });
             return;
           }
         }
 
+        await ctx.answerCallbackQuery();
+
         try {
-          await ctx.editMessageText(formatVacancyLoading(vacancy), {
+          await ctx.editMessageText(formatVacancyLoading(vacancy, '\u0413\u0435\u043D\u0435\u0440\u0438\u0440\u0443\u044E \u043E\u0442\u043A\u043B\u0438\u043A...'), {
             parse_mode: 'HTML',
             link_preview_options: { is_disabled: true },
           });
@@ -781,24 +776,37 @@ export function createBot(): Bot {
         break;
       }
 
-      case 'skills': {
+      case 'details': {
         await ctx.answerCallbackQuery();
+        const expLabel: Record<string, string> = {
+          junior: 'Junior (1–3 года)',
+          middle: 'Middle (3–6 лет)',
+          senior: 'Senior (6+ лет)',
+          lead: 'Lead',
+        };
         const skillsList = vacancy.skills.length > 0 ? vacancy.skills.join(', ') : 'не указаны';
-        const descSnippet = vacancy.description
-          ? vacancy.description.replace(/<[^>]+>/g, '').slice(0, 1000)
+        const descPlain = vacancy.description
+          ? vacancy.description.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
           : '';
+        const descSnippet = descPlain.slice(0, 1500);
         const lines = [
-          `\u{1F6E0}\uFE0F <b>Навыки вакансии</b>`,
+          `\u{1F4CB} <b>Что хотят</b>`,
           '',
-          `<code>${escapeHtml(skillsList)}</code>`,
         ];
+        if (vacancy.experience && vacancy.experience !== 'unknown') {
+          lines.push(`<b>Опыт:</b> ${expLabel[vacancy.experience] ?? vacancy.experience}`);
+        }
+        if (vacancy.city) {
+          lines.push(`<b>Город:</b> ${escapeHtml(vacancy.city)}`);
+        }
+        lines.push(`<b>Навыки:</b> ${escapeHtml(skillsList)}`);
         if (descSnippet) {
           lines.push('', `<b>Описание:</b>`, escapeHtml(descSnippet));
-          if (vacancy.description && vacancy.description.replace(/<[^>]+>/g, '').length > 1000) {
+          if (descPlain.length > 1500) {
             lines.push('...');
           }
         }
-        const backBtn = new InlineKeyboard().text('\u25C0\uFE0F Назад', `view:${id}`);
+        const backBtn = new InlineKeyboard().text('\u25C0\uFE0F \u041D\u0430\u0437\u0430\u0434', `view:${id}`);
         try {
           await ctx.editMessageText(lines.join('\n'), {
             parse_mode: 'HTML',
@@ -806,27 +814,28 @@ export function createBot(): Bot {
             link_preview_options: { is_disabled: true },
           });
         } catch (err) {
-          logger.warn('bot', 'Failed to show skills', { error: String(err) });
+          logger.warn('bot', 'Failed to show details', { error: String(err) });
         }
         break;
       }
 
       case 'restyle': {
-        await ctx.answerCallbackQuery();
-
         // Rate limit: prevent spam-clicking
         const restyleCooldown = checkCooldown(user.id);
         if (!restyleCooldown.allowed) {
-          await ctx.answerCallbackQuery({ text: `Подожди ${restyleCooldown.remainingSec} сек` });
+          await ctx.answerCallbackQuery({ text: `\u23F3 \u041F\u043E\u0434\u043E\u0436\u0434\u0438 ${restyleCooldown.remainingSec} \u0441\u0435\u043A` });
           return;
         }
 
         // Freemium gate: restyle always counts as a new generation
         const canRestyle = checkCoverLetterLimit(user);
         if (!canRestyle) {
+          await ctx.answerCallbackQuery();
           await ctx.reply(paywallText('letters', user), { parse_mode: 'HTML' });
           return;
         }
+
+        await ctx.answerCallbackQuery();
 
         try {
           await ctx.editMessageText(formatVacancyLoading(vacancy, '\u0413\u0435\u043D\u0435\u0440\u0438\u0440\u0443\u044E \u0434\u0440\u0443\u0433\u043E\u0439 \u0432\u0430\u0440\u0438\u0430\u043D\u0442...'), {

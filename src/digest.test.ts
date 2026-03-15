@@ -161,7 +161,7 @@ describe('formatVacancyLoading', () => {
   it('shows default loading text', () => {
     const result = formatVacancyLoading(makeScored());
     expect(result).toContain('<i>');
-    expect(result).toContain('Генерирую письмо');
+    expect(result).toContain('Генерирую отклик');
   });
 
   it('shows custom loading text', () => {

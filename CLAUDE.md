@@ -94,7 +94,7 @@ src/
 
 **Commands:** /start, /digest, /profile, /stats, /subscribe
 
-**Vacancy buttons:** Письмо | Скрыть (row 1), Откликнулся (row 2)
+**Vacancy buttons:** Отклик | Скрыть (row 1), Что хотят (row 2), Откликнулся (row 3)
 
 **Cover letter buttons:** Назад | Другой вариант (row 1), Откликнулся (row 2)
 
