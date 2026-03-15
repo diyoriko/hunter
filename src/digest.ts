@@ -89,7 +89,7 @@ export const DIGEST_PAGE_SIZE = 15;
 
 export function vacancyButtons(id: number, hasSkills = true): InlineKeyboard {
   const kb = new InlineKeyboard()
-    .text('\u{1F4DD} \u041F\u0438\u0441\u044C\u043C\u043E', `cover:${id}`)
+    .text('\u{1F4DD} \u041E\u0442\u043A\u043B\u0438\u043A', `cover:${id}`)
     .text('\u274C \u0421\u043A\u0440\u044B\u0442\u044C', `reject:${id}`)
     .row();
   if (hasSkills) {

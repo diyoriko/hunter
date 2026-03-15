@@ -93,6 +93,7 @@ async function handleDigest(ctx: Context): Promise<void> {
 
 async function handleProfile(ctx: Context): Promise<void> {
   const user = getOrCreateUser(ctx.from!.id);
+  const pro = isProUser(user);
   const skills = user.skills.length > 0 ? user.skills.join(', ') : 'не указаны';
   const salary = formatSalaryProfile(user);
   const domains = user.domains.length > 0 ? user.domains.map(d => d.name).join(', ') : 'любые';
@@ -123,12 +124,18 @@ async function handleProfile(ctx: Context): Promise<void> {
     user.companyBlacklist.length > 0 ? '<i>  (скор вакансий этих компаний = 0)</i>' : '',
     '',
     user.portfolio ? `🔗 <b>Портфолио:</b> ${escapeHtml(user.portfolio)}` : '',
+    '',
+    pro
+      ? `⭐ <b>План:</b> Pro${user.planExpiresAt ? ` (до ${user.planExpiresAt.toLocaleDateString('ru-RU')})` : ''}`
+      : `⭐ <b>План:</b> Free — писем: ${Math.max(0, CONFIG.freemium.free.coverLetters - user.lettersUsed)}/${CONFIG.freemium.free.coverLetters}`,
+    user.credits > 0 ? `Кредитов: ${user.credits}` : '',
   ].filter(Boolean).join('\n');
 
-  const editButton = new InlineKeyboard()
-    .text('✏️ Редактировать', 'edit_profile');
+  const profileButtons = new InlineKeyboard()
+    .text('✏️ Редактировать', 'edit_profile')
+    .text('⭐ Подписка', 'quick:subscribe');
 
-  await ctx.reply(text, { parse_mode: 'HTML', reply_markup: editButton });
+  await ctx.reply(text, { parse_mode: 'HTML', reply_markup: profileButtons });
 }
 
 async function handleStats(ctx: Context): Promise<void> {

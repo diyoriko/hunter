@@ -220,14 +220,17 @@ function migrateFkCascade() {
 function seedOwner() {
   const d = getDb();
   const exists = d.prepare('SELECT id FROM users WHERE telegram_id = ?').get(CONFIG.adminTelegramId);
-  if (exists) return;
-
-  d.prepare(`
-    INSERT INTO users (telegram_id, name, onboarding_state)
-    VALUES (?, 'Admin', 'complete')
-  `).run(CONFIG.adminTelegramId);
-
-  logger.info('db', 'Owner profile seeded (minimal)');
+  if (!exists) {
+    d.prepare(`
+      INSERT INTO users (telegram_id, name, onboarding_state, plan)
+      VALUES (?, 'Admin', 'complete', 'pro')
+    `).run(CONFIG.adminTelegramId);
+    logger.info('db', 'Owner profile seeded (minimal, Pro)');
+  } else {
+    // Ensure admin always has Pro
+    d.prepare("UPDATE users SET plan = 'pro', plan_expires_at = NULL WHERE telegram_id = ? AND plan != 'pro'")
+      .run(CONFIG.adminTelegramId);
+  }
 }
 
 // --- KV Store ---

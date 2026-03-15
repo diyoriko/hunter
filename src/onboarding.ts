@@ -180,7 +180,7 @@ const EDIT_FIELDS: Record<string, {
   skills: {
     label: 'Навыки',
     state: 'awaiting_skills',
-    getValue: (u) => u.skills.length > 0 ? truncate(u.skills.join(', '), 50) : '—',
+    getValue: (u) => u.skills.length > 0 ? u.skills.join(', ') : '—',
   },
   salary: {
     label: 'Зарплата',
@@ -195,32 +195,32 @@ const EDIT_FIELDS: Record<string, {
   domains: {
     label: 'Отрасли',
     state: 'awaiting_domains',
-    getValue: (u) => u.domains.length > 0 ? truncate(u.domains.map(d => d.name).join(', '), 50) : 'любые',
+    getValue: (u) => u.domains.length > 0 ? u.domains.map(d => d.name).join(', ') : 'любые',
   },
   red_flags: {
     label: 'Red flags',
     state: 'awaiting_red_flags',
-    getValue: (u) => u.redFlags.length > 0 ? truncate(u.redFlags.join(', '), 50) : 'нет',
+    getValue: (u) => u.redFlags.length > 0 ? u.redFlags.join(', ') : 'нет',
   },
   blacklist: {
     label: 'Блеклист',
     state: 'awaiting_blacklist',
-    getValue: (u) => u.companyBlacklist.length > 0 ? truncate(u.companyBlacklist.join(', '), 50) : 'нет',
+    getValue: (u) => u.companyBlacklist.length > 0 ? u.companyBlacklist.join(', ') : 'нет',
   },
   queries: {
     label: 'Запросы',
     state: 'awaiting_queries',
-    getValue: (u) => u.searchQueries.length > 0 ? truncate(u.searchQueries.join(', '), 50) : 'из должности',
+    getValue: (u) => u.searchQueries.length > 0 ? u.searchQueries.join(', ') : 'из должности',
   },
   portfolio: {
     label: 'Портфолио',
     state: 'awaiting_portfolio',
-    getValue: (u) => u.portfolio ? truncate(u.portfolio, 40) : '—',
+    getValue: (u) => u.portfolio ?? '—',
   },
   about: {
     label: 'О себе',
     state: 'awaiting_about',
-    getValue: (u) => u.about ? truncate(u.about, 40) : '—',
+    getValue: (u) => u.about ?? '—',
   },
 };
 
