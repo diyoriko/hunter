@@ -66,7 +66,7 @@ async function main() {
   http.createServer((req, res) => {
     // GET / — health check
     if (req.url === '/' || req.url === '/health') {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       res.end(JSON.stringify({ status: 'ok', version: CONFIG.version }));
       return;
     }
