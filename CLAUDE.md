@@ -24,7 +24,7 @@
 - **Bot framework:** grammY
 - **Database:** SQLite (better-sqlite3, WAL mode)
 - **Scrapers:** hh.ru API, Habr Career API (cheerio)
-- **AI:** Claude CLI (`claude --print --model claude-sonnet-4-6`)
+- **AI:** Anthropic SDK (`@anthropic-ai/sdk`, claude-sonnet-4)
 - **Validation:** zod
 - **Scheduler:** node-cron (3x/день скрейп + push + утренний дайджест)
 - **Hosting:** Railway 24/7 (автодеплой из main)
@@ -84,7 +84,7 @@ src/
 - **Browser User-Agent** — hh.ru blacklists bot UAs
 - **Scoring is per-user** — skills 40%, salary 25%, format 20%, domain 15%, red flags /2, blacklist =0
 - **Owner seeded** — ADMIN_TELEGRAM_ID pre-loaded with minimal profile
-- **Cover letters via CLI** — no API key needed, uses Max subscription auth
+- **Cover letters via Anthropic SDK** — requires ANTHROPIC_API_KEY env var
 - **Vacancies shown expanded** — full detail + buttons immediately
 - **Auto-scrape** — 3x/день (09:00, 13:00, 17:00 MSK), без ручного Поиска
 
@@ -114,6 +114,7 @@ npm run build && npm start
 TELEGRAM_BOT_TOKEN=...    # @jobhunt_ai_bot token
 JOBS_DB_PATH=./jobs.db    # SQLite path
 ADMIN_TELEGRAM_ID=...     # Owner Telegram ID for deploy notifications & seed
+ANTHROPIC_API_KEY=...     # Anthropic API key for cover letter generation
 ```
 
 ## Agents

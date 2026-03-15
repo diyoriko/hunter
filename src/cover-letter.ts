@@ -1,11 +1,23 @@
-import { spawn } from 'child_process';
+import Anthropic from '@anthropic-ai/sdk';
 import { logger } from './logger';
 import { getDb } from './db';
+import { CONFIG } from './config';
 import type { UserProfile, ScoredVacancy } from './types';
+
+let client: Anthropic | null = null;
+
+function getClient(): Anthropic {
+  if (!client) {
+    if (!CONFIG.anthropicApiKey) {
+      throw new Error('ANTHROPIC_API_KEY not configured');
+    }
+    client = new Anthropic({ apiKey: CONFIG.anthropicApiKey });
+  }
+  return client;
+}
 
 /**
  * Build a system prompt tailored to the user's profile.
- * Unlike Hunter's hardcoded prompt, this generates dynamically from user data.
  */
 function buildSystemPrompt(user: UserProfile): string {
   const name = user.name ?? 'Кандидат';
@@ -76,45 +88,20 @@ function formatSalaryRange(v: ScoredVacancy): string {
   return `до ${v.salaryTo} ${v.salaryCurrency}`;
 }
 
-/** Run claude CLI with --print flag */
-function runClaude(prompt: string, systemPrompt: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const fullPrompt = `${systemPrompt}\n\n---\n\n${prompt}`;
-
-    const env = { ...process.env };
-    delete env.CLAUDECODE;
-
-    const child = spawn('claude', ['--print', '--model', 'claude-sonnet-4-6'], {
-      env,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout.on('data', (data: Buffer) => { stdout += data.toString(); });
-    child.stderr.on('data', (data: Buffer) => { stderr += data.toString(); });
-
-    child.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error(`claude CLI failed (code ${code}): ${stderr}`));
-      } else {
-        resolve(stdout.trim());
-      }
-    });
-
-    child.on('error', (err) => {
-      reject(new Error(`claude CLI failed: ${err.message}`));
-    });
-
-    child.stdin.write(fullPrompt);
-    child.stdin.end();
-
-    setTimeout(() => {
-      child.kill();
-      reject(new Error('claude CLI timeout (60s)'));
-    }, 60_000);
+/** Generate cover letter via Anthropic API */
+async function callAnthropic(prompt: string, systemPrompt: string): Promise<string> {
+  const response = await getClient().messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 1024,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: prompt }],
   });
+
+  const textBlock = response.content.find(b => b.type === 'text');
+  if (!textBlock || textBlock.type !== 'text') {
+    throw new Error('No text in Anthropic response');
+  }
+  return textBlock.text.trim();
 }
 
 /** Generate cover letter for a user + vacancy */
@@ -129,7 +116,10 @@ export async function generateCoverLetter(user: UserProfile, v: ScoredVacancy, r
     }
   }
 
-  const text = await runClaude(prompt, systemPrompt);
+  const start = Date.now();
+  const text = await callAnthropic(prompt, systemPrompt);
+  logger.info('cover-letter', 'Generated', { duration: Date.now() - start, vacancyId: v.id, userId: user.id });
+
   saveCoverLetter(user.id, v.id, text);
   return text;
 }
